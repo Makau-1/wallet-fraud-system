@@ -1,3 +1,12 @@
-### Login as sender
-GET http://localhost:3000/api/wallet/history?page=1&limit=10
-Cookie: connect.sid=s%3AnaOMUv-cJfebcjGsqmYkTJ4J9aZSW3o8.pjIRBgBLRgVUcQu1JmBxY5Hvu8EVG9dlbIMhu5xqlks
+@baseUrl = http://localhost:3000
+
+
+### Confirm fraud alert ID 1
+PATCH http://localhost:3000/api/admin/fraud-alerts/1/status
+Content-Type: application/json
+
+{
+  "status": "confirmed_fraud",
+  "notes": "Administrator review API test"
+}
+

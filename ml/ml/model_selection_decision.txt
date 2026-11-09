@@ -1,0 +1,37 @@
+SECUREWALLET MODEL-SELECTION DECISION
+=====================================
+
+Selected model: Random Forest Classifier
+
+Alternative evaluated: Isolation Forest
+
+Reason for selection:
+Random Forest achieved an F1-score of 0.9820, precision of
+0.9647 and recall of 1.0000 on the approximately 1% fraud
+test set. On the unseen transaction-type experiment, it
+achieved recall of 0.9602, compared with 0.0386 for Isolation
+Forest trained on legitimate CASH_OUT transactions only.
+
+Performance trade-off:
+Random Forest had a measured scoring time of 73.0804 ms per
+transaction. Isolation Forest A had a measured scoring time
+of 39.0375 ms per transaction on the same computer.
+
+Feature investigation:
+The balance_discrepancy feature exactly matches
+oldbalanceOrg - amount - newbalanceOrig in the processed data.
+It has a Random Forest feature importance of 0.4623.
+Removing it reduced the F1-score on the approximately 1% fraud
+test set from 0.9820 to 0.6165.
+
+Limitations:
+The dataset is synthetic and its fraud patterns may be easier
+to distinguish than real-world fraud. Results from the
+approximately 1% test set come from a sampled subset of the
+original test set. Performance in production is not established
+by these experiments.
+
+Final decision:
+Use Random Forest as the candidate model for Sprint 4
+integration, while preserving the experimental results and
+validating feature calculations during integration.
