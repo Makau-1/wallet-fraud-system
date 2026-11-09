@@ -2,5 +2,9 @@ pandas
 numpy
 scipy
 scikit-learn
+joblib
+fastapi
+uvicorn
+pydantic
 jupyterlab
 notebook

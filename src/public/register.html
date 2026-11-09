@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureWallet | Create an account</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main class="auth-layout">
+        <section class="brand-panel" aria-label="About SecureWallet">
+            <svg class="guilloche rosette" aria-hidden="true"><use href="guilloche.svg#rosette"/></svg>
+            <svg class="guilloche band" aria-hidden="true" preserveAspectRatio="none"><use href="guilloche.svg#band"/></svg>
+            <a class="brand" href="index.html"><span class="brand-mark">S</span> SecureWallet</a>
+            <div class="brand-copy">
+                <h1>A wallet that watches for fraud.</h1>
+                <p>Create an account and you get a wallet straight away. Deposit, send money to other users and see every transaction in one place.</p>
+            </div>
+            <p class="brand-footer">A simulated wallet for research and teaching. No real money moves.</p>
+        </section>
+
+        <section class="auth-panel">
+            <form id="registerForm" class="auth-card" novalidate>
+                <h2>Create an account</h2>
+                <p class="lead">Your wallet opens with a balance of 0.00.</p>
+
+                <label for="name">Full name</label>
+                <input id="name" name="name" type="text" autocomplete="name" maxlength="255" required>
+
+                <label for="email">Email address</label>
+                <input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+
+                <label for="password">Password</label>
+                <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" aria-describedby="passwordHint" required>
+                <p id="passwordHint" class="hint">At least 8 characters.</p>
+
+                <button id="registerButton" type="submit">Create account</button>
+                <p id="message" class="message" role="status" aria-live="polite"></p>
+
+                <p class="auth-switch">Already have an account? <a href="index.html">Sign in</a></p>
+            </form>
+        </section>
+    </main>
+    <script src="app.js"></script>
+</body>
+</html>

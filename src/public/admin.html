@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureWallet | Fraud review</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="admin">
+    <header class="topbar">
+        <a class="brand" href="admin.html"><span class="brand-mark">S</span> SecureWallet</a>
+        <div class="who">
+            <span id="userName"></span>
+            <button id="logoutButton" class="quiet" type="button">Log out</button>
+        </div>
+    </header>
+
+    <main class="page">
+        <div class="page-head">
+            <h1>Fraud review</h1>
+            <p>Transfers and withdrawals the model scored at 0.50 or above. The money has already moved; your decision records whether the transaction was fraud.</p>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Alert status">
+            <button type="button" role="tab" aria-selected="true" data-status="pending">Waiting for review <span class="count" id="count-pending">0</span></button>
+            <button type="button" role="tab" aria-selected="false" data-status="confirmed_fraud">Confirmed fraud <span class="count" id="count-confirmed_fraud">0</span></button>
+            <button type="button" role="tab" aria-selected="false" data-status="cleared">Dismissed <span class="count" id="count-cleared">0</span></button>
+        </div>
+
+        <p id="adminMessage" class="message" role="status" aria-live="polite"></p>
+        <ul id="alertList" class="alerts" aria-live="polite"></ul>
+    </main>
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureWallet | My wallet</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="dashboard">
+    <header class="topbar">
+        <a class="brand" href="dashboard.html"><span class="brand-mark">S</span> SecureWallet</a>
+        <div class="who">
+            <span id="userName"></span>
+            <button id="logoutButton" class="quiet" type="button">Log out</button>
+        </div>
+    </header>
+
+    <main class="page">
+        <div class="dashboard">
+            <section aria-labelledby="walletHeading">
+                <h1 id="walletHeading" class="visually-hidden">My wallet</h1>
+
+                <div class="note" aria-live="polite">
+                    <svg class="guilloche rosette" aria-hidden="true"><use href="guilloche.svg#rosette"/></svg>
+                    <div class="note-top">
+                        <span class="note-issuer">SecureWallet</span>
+                        <span class="note-serial" id="walletSerial" title="Wallet number"></span>
+                    </div>
+                    <div class="note-amount">
+                        <span class="currency" id="currency"></span><span class="value" id="balance">0.00</span>
+                    </div>
+                    <div class="note-bottom">
+                        <span>Available balance</span>
+                        <span id="holderName"></span>
+                    </div>
+                </div>
+
+                <div class="mover">
+                    <div class="segmented" role="tablist" aria-label="Move money">
+                        <button type="button" role="tab" id="tab-deposit" aria-controls="moveForm" aria-selected="true" data-action="deposit">Deposit</button>
+                        <button type="button" role="tab" id="tab-withdraw" aria-controls="moveForm" aria-selected="false" data-action="withdraw">Withdraw</button>
+                        <button type="button" role="tab" id="tab-transfer" aria-controls="moveForm" aria-selected="false" data-action="transfer">Send</button>
+                    </div>
+
+                    <form id="moveForm" role="tabpanel" novalidate>
+                        <div id="recipientField" hidden>
+                            <label for="recipientEmail">Recipient's email</label>
+                            <input id="recipientEmail" type="email" autocomplete="off" placeholder="name@example.com">
+                        </div>
+
+                        <label for="amount">Amount</label>
+                        <input id="amount" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="0.00" required>
+                        <p id="actionHint" class="hint">Adds money to your wallet.</p>
+
+                        <button id="moveButton" type="submit">Deposit money</button>
+                        <p id="moveMessage" class="message" role="status" aria-live="polite"></p>
+                    </form>
+                </div>
+            </section>
+
+            <section class="activity" aria-labelledby="activityHeading">
+                <div class="activity-head">
+                    <h2 id="activityHeading">Activity</h2>
+                    <span id="activityCount"></span>
+                </div>
+                <ul id="txList" class="tx-list"></ul>
+                <div class="more" id="moreWrap" hidden>
+                    <button id="moreButton" class="quiet" type="button">Show older activity</button>
+                </div>
+            </section>
+        </div>
+    </main>
+    <script src="app.js"></script>
+</body>
+</html>

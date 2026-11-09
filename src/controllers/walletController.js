@@ -32,6 +32,7 @@ async function getBalance(req, res) {
         return res.status(200).json({
             walletId: wallet.id,
             balance: wallet.balance,
+            currency: wallet.currency,
         });
     } catch (error) {
         console.error('[WalletController] Get balance error:', error);
@@ -77,19 +78,40 @@ async function deposit(req, res) {
             });
         }
 
-        await walletModel.incrementBalance(wallet.id, amount);
+        // Credit the wallet and record the deposit in one database
+        // transaction, so the balance and the history always agree.
+        let result;
+        const connection = await db.getConnection();
 
-        const [result] = await db.execute(
-            `INSERT INTO transactions
-                (amount, receiver_wallet_id, sender_wallet_id,
-                 status, metadata)
-             VALUES (?, ?, NULL, 'completed', ?)`,
-            [
-                amount,
-                wallet.id,
-                JSON.stringify({ type: 'deposit' }),
-            ]
-        );
+        try {
+            await connection.beginTransaction();
+
+            await connection.execute(
+                `UPDATE wallets
+                 SET balance = balance + ?
+                 WHERE id = ?`,
+                [amount, wallet.id]
+            );
+
+            [result] = await connection.execute(
+                `INSERT INTO transactions
+                    (amount, receiver_wallet_id, sender_wallet_id,
+                     status, metadata)
+                 VALUES (?, ?, NULL, 'completed', ?)`,
+                [
+                    amount,
+                    wallet.id,
+                    JSON.stringify({ type: 'deposit' }),
+                ]
+            );
+
+            await connection.commit();
+        } catch (depositError) {
+            await connection.rollback();
+            throw depositError;
+        } finally {
+            connection.release();
+        }
 
         const updatedWallet =
             await walletModel.getWalletByUserId(userId);
@@ -199,7 +221,11 @@ async function withdraw(req, res) {
             [
                 amount,
                 wallet.id,
-                JSON.stringify({ type: 'withdrawal' }),
+                JSON.stringify({
+                    type: 'withdrawal',
+                    sender_balance_before: senderBefore,
+                    sender_balance_after: senderAfter,
+                }),
             ]
         );
 
@@ -426,7 +452,13 @@ async function transfer(req, res) {
                 amount,
                 senderWallet.id,
                 recipientWallet.id,
-                JSON.stringify({ type: 'transfer' }),
+                JSON.stringify({
+                    type: 'transfer',
+                    sender_balance_before: senderBefore,
+                    sender_balance_after: senderAfter,
+                    receiver_balance_before: receiverBefore,
+                    receiver_balance_after: receiverAfter,
+                }),
             ]
         );
 
@@ -527,9 +559,9 @@ async function getHistory(req, res) {
             parseInt(req.query.page, 10) || 1
         );
 
-        const limit = Math.max(
-            1,
-            parseInt(req.query.limit, 10) || 20
+        const limit = Math.min(
+            100,
+            Math.max(1, parseInt(req.query.limit, 10) || 20)
         );
 
         const offset = (page - 1) * limit;
@@ -551,12 +583,44 @@ async function getHistory(req, res) {
             offset
         );
 
+        // The fraud check belongs to the sender's transaction, so the
+        // receiving party does not see its score or review status.
+        const visible = transactions.map(tx => {
+            let meta = tx.metadata;
+            if (typeof meta === 'string') {
+                try { meta = JSON.parse(meta); } catch (e) { meta = {}; }
+            }
+
+            const item = {
+                id: tx.id,
+                type: (meta && meta.type) || 'transfer',
+                direction: tx.direction,
+                amount: tx.amount,
+                currency: tx.currency,
+                status: tx.status,
+                created_at: tx.created_at,
+                counterparty: tx.direction === 'out'
+                    ? { name: tx.receiver_name, email: tx.receiver_email }
+                    : { name: tx.sender_name, email: tx.sender_email },
+            };
+
+            if (tx.direction === 'out') {
+                item.fraud_check = {
+                    scoring_status: tx.scoring_status,
+                    fraud_score: tx.fraud_score === null ? null : Number(tx.fraud_score),
+                    alert_status: tx.alert_status || null,
+                };
+            }
+
+            return item;
+        });
+
         return res.status(200).json({
             page,
             limit,
             totalTransactions: total,
             totalPages: Math.ceil(total / limit),
-            transactions,
+            transactions: visible,
         });
     } catch (error) {
         console.error(

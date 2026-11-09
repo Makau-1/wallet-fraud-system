@@ -26,6 +26,10 @@ app.use(cors({
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Session configuration
+if (!process.env.SESSION_SECRET) {
+    console.error('SESSION_SECRET is not set in .env. Sessions will not work.');
+}
+
 app.use(
     session({
         secret: process.env.SESSION_SECRET,

@@ -1,48 +1,45 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SecureWallet | Sign In</title>
+    <title>SecureWallet | Sign in</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <main class="auth-layout">
-        <section class="brand-panel">
-            <div class="brand"><span class="brand-icon">S</span> SecureWallet</div>
+        <section class="brand-panel" aria-label="About SecureWallet">
+            <svg class="guilloche rosette" aria-hidden="true"><use href="guilloche.svg#rosette"/></svg>
+            <svg class="guilloche band" aria-hidden="true" preserveAspectRatio="none"><use href="guilloche.svg#band"/></svg>
+            <a class="brand" href="index.html"><span class="brand-mark">S</span> SecureWallet</a>
             <div class="brand-copy">
-                <p class="eyebrow">SMART DIGITAL PAYMENTS</p>
-                <h1>Your money.<br>More secure.</h1>
-                <p>Manage your wallet and make payments with intelligent fraud monitoring.</p>
+                <h1>Every transfer, checked as it happens.</h1>
+                <p>Send, withdraw and track your money. A fraud model reviews each transfer and withdrawal the moment you make it.</p>
             </div>
-            <p class="brand-footer">Secure payments. Smarter protection.</p>
+            <p class="brand-footer">A simulated wallet for research and teaching. No real money moves.</p>
         </section>
 
         <section class="auth-panel">
-            <form id="loginForm" class="auth-card">
-                <p class="eyebrow">WELCOME BACK</p>
-                <h2>Sign in to your account</h2>
-                <p class="muted">Enter your credentials to continue to SecureWallet.</p>
+            <form id="loginForm" class="auth-card" novalidate>
+                <h2>Sign in</h2>
+                <p class="lead">Use the email and password you registered with.</p>
 
                 <label for="email">Email address</label>
-                <input id="email" name="email" type="email"
-                       placeholder="you@example.com" required>
+                <input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
 
                 <label for="password">Password</label>
-                <input id="password" name="password" type="password"
-                       placeholder="Enter your password" required>
+                <input id="password" name="password" type="password" autocomplete="current-password" required>
 
                 <button id="loginButton" type="submit">Sign in</button>
-                <p id="message" class="message" role="status"></p>
+                <p id="message" class="message" role="status" aria-live="polite"></p>
 
-                <p class="auth-switch">Don't have an account?
-                    <a href="register.html">Create one</a>
-                </p>
+                <p class="auth-switch">New to SecureWallet? <a href="register.html">Create an account</a></p>
             </form>
         </section>
     </main>
     <script src="app.js"></script>
 </body>
 </html>
-

@@ -34,7 +34,7 @@ CREATE TABLE `fraud_alerts` (
   `reviewed_by` bigint unsigned DEFAULT NULL,
   `reviewed_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `idx_tx` (`transaction_id`),
+  UNIQUE KEY `idx_tx` (`transaction_id`),
   KEY `idx_status` (`status`),
   KEY `fk_fraud_alerts_reviewed_by` (`reviewed_by`),
   CONSTRAINT `fk_alert_tx` FOREIGN KEY (`transaction_id`) REFERENCES `transactions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
