@@ -11,11 +11,17 @@
 </head>
 <body data-page="dashboard">
     <header class="topbar">
-        <a class="brand" href="dashboard.html">
+        <a class="brand" href="dashboard.html#home">
             <img class="brand-logo" src="img/webmasters-logo.png" alt="Webmasters">
             <span class="brand-divider" aria-hidden="true"></span>
             <span class="brand-product">SecureWallet</span>
         </a>
+        <nav class="views-nav" aria-label="Wallet sections">
+            <a href="#home" data-view="home">Home</a>
+            <a href="#savings" data-view="savings">Savings</a>
+            <a href="#loans" data-view="loans">Loans</a>
+            <a href="#requests" data-view="requests">Requests <span class="count" id="navRequestCount" hidden>0</span></a>
+        </nav>
         <div class="who">
             <span id="userName"></span>
             <button id="logoutButton" class="quiet" type="button">Log out</button>
@@ -23,8 +29,10 @@
     </header>
 
     <main class="page">
-        <h1 class="visually-hidden">My wallet</h1>
-        <div class="dashboard">
+        <h1 class="visually-hidden" id="viewHeading">My wallet</h1>
+
+        <!-- ============================ HOME ============================ -->
+        <section data-view-panel="home" class="dashboard">
             <div class="stack">
                 <section class="console" aria-labelledby="balanceLabel">
                     <div class="console-head">
@@ -34,31 +42,71 @@
                     <div class="balance-amount" aria-live="polite">
                         <span class="currency" id="currency"></span><span class="value" id="balance">0.00</span>
                     </div>
+                    <div class="balance-strip">
+                        <a href="#savings"><span class="mono">Savings</span><strong id="stripSavings">0.00</strong></a>
+                        <a href="#loans"><span class="mono">Loan owed</span><strong id="stripLoan">0.00</strong></a>
+                    </div>
                     <div class="balance-foot">
                         <span id="holderName"></span>
                         <span class="mono" id="scoringStatus"><span class="dot idle"></span>Fraud monitoring</span>
                     </div>
                 </section>
 
-                <section class="console" aria-label="Move money">
-                    <div class="segmented" role="tablist" aria-label="Move money">
-                        <button type="button" role="tab" id="tab-deposit" aria-controls="moveForm" aria-selected="true" data-action="deposit">Deposit</button>
-                        <button type="button" role="tab" id="tab-withdraw" aria-controls="moveForm" aria-selected="false" data-action="withdraw">Withdraw</button>
-                        <button type="button" role="tab" id="tab-transfer" aria-controls="moveForm" aria-selected="false" data-action="transfer">Send</button>
+                <section class="console" aria-labelledby="actionsHeading">
+                    <div id="actionGrid">
+                        <div class="console-head">
+                            <span class="mono" id="actionsHeading">Move money</span>
+                        </div>
+                        <div class="action-grid">
+                            <button type="button" class="action" data-action="transfer"><span class="action-icon" data-icon="send"></span>Send</button>
+                            <button type="button" class="action" data-action="request"><span class="action-icon" data-icon="request"></span>Request</button>
+                            <button type="button" class="action" data-action="withdraw"><span class="action-icon" data-icon="withdraw"></span>Withdraw</button>
+                            <button type="button" class="action" data-action="deposit"><span class="action-icon" data-icon="deposit"></span>Deposit</button>
+                            <button type="button" class="action" data-action="bank"><span class="action-icon" data-icon="bank"></span>To bank</button>
+                            <button type="button" class="action" data-action="paybill"><span class="action-icon" data-icon="paybill"></span>Pay bill</button>
+                            <button type="button" class="action" data-action="till"><span class="action-icon" data-icon="till"></span>Buy goods</button>
+                            <button type="button" class="action" data-action="airtime"><span class="action-icon" data-icon="airtime"></span>Airtime</button>
+                        </div>
                     </div>
 
-                    <form id="moveForm" role="tabpanel" novalidate>
-                        <div id="recipientField" hidden>
-                            <label for="recipientEmail">Recipient's email</label>
+                    <form id="actionForm" novalidate hidden>
+                        <div class="form-head">
+                            <button type="button" class="back" id="formBack" aria-label="Back to all actions">&larr;</button>
+                            <h2 id="formTitle"></h2>
+                        </div>
+
+                        <div class="field" data-field="recipientEmail">
+                            <label for="recipientEmail" id="recipientLabel">Recipient's email</label>
                             <input id="recipientEmail" type="email" autocomplete="off" placeholder="name@example.com">
                             <div class="recent" id="recentRecipients" role="group" aria-label="Recent recipients"></div>
+                        </div>
+                        <div class="field" data-field="bank">
+                            <label for="bank">Bank</label>
+                            <select id="bank"></select>
+                        </div>
+                        <div class="field" data-field="accountNumber">
+                            <label for="accountNumber">Bank account number</label>
+                            <input id="accountNumber" inputmode="numeric" autocomplete="off" placeholder="6 to 16 digits">
+                        </div>
+                        <div class="field" data-field="number">
+                            <label for="number" id="numberLabel">Business number</label>
+                            <input id="number" inputmode="numeric" autocomplete="off">
+                        </div>
+                        <div class="field" data-field="account">
+                            <label for="account">Account number</label>
+                            <input id="account" autocomplete="off" maxlength="30" placeholder="As shown on your bill">
                         </div>
 
                         <label for="amount">Amount</label>
                         <input id="amount" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="0.00" required>
-                        <p id="actionHint" class="hint">Adds money to your wallet.</p>
 
-                        <button id="moveButton" type="submit">Deposit money</button>
+                        <div class="field" data-field="note">
+                            <label for="note">Note (optional)</label>
+                            <input id="note" maxlength="120" placeholder="What it's for">
+                        </div>
+
+                        <p id="actionHint" class="hint"></p>
+                        <button id="moveButton" type="submit">Continue</button>
                         <p id="moveMessage" class="message" role="status" aria-live="polite"></p>
                     </form>
 
@@ -75,19 +123,157 @@
                 </section>
             </div>
 
-            <section class="console" aria-labelledby="activityHeading">
-                <div id="reviewBanner" class="banner" hidden></div>
-                <div class="activity-head">
-                    <h2 id="activityHeading">Activity</h2>
-                    <span class="mono" id="activityCount"></span>
+            <div class="stack">
+                <section id="incomingRequests" class="console" aria-labelledby="incomingHeading" hidden>
+                    <div class="console-head">
+                        <span class="mono" id="incomingHeading">Money requested from you</span>
+                        <a href="#requests" class="mono">All requests</a>
+                    </div>
+                    <ul class="req-list" id="incomingList"></ul>
+                </section>
+
+                <section class="console" aria-labelledby="activityHeading">
+                    <div id="reviewBanner" class="banner" hidden></div>
+                    <div class="activity-head">
+                        <h2 id="activityHeading">Activity</h2>
+                        <div class="activity-tools">
+                            <span class="mono" id="activityCount"></span>
+                            <button id="statementButton" class="quiet small" type="button">Download statement</button>
+                        </div>
+                    </div>
+                    <ul id="txList" class="tx-list"></ul>
+                    <div class="more" id="moreWrap" hidden>
+                        <button id="moreButton" class="quiet" type="button">Show older activity</button>
+                    </div>
+                </section>
+            </div>
+        </section>
+
+        <!-- ============================ SAVINGS ============================ -->
+        <section data-view-panel="savings" hidden>
+            <div class="page-head">
+                <span class="mono">Locked savings</span>
+                <h2 class="view-title">Savings goals</h2>
+                <p>Set money aside for something specific. Money in a locked goal cannot be spent or withdrawn until its unlock date, which keeps it safe from impulse spending and from anyone who gets into your account.</p>
+            </div>
+            <div class="dashboard">
+                <div class="stack">
+                    <section class="console">
+                        <div class="console-head"><span class="mono">Total saved</span></div>
+                        <div class="balance-amount"><span class="currency" data-currency></span><span class="value" id="savingsTotal">0.00</span></div>
+                    </section>
+                    <form class="console" id="goalForm" novalidate>
+                        <div class="console-head"><span class="mono">New goal</span></div>
+                        <label for="goalName">Goal name</label>
+                        <input id="goalName" maxlength="60" placeholder="For example, school fees">
+                        <label for="goalTarget">Target amount (optional)</label>
+                        <input id="goalTarget" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="0.00">
+                        <label for="goalLock">Lock for</label>
+                        <select id="goalLock">
+                            <option value="0">No lock (withdraw any time)</option>
+                            <option value="7">7 days</option>
+                            <option value="30" selected>30 days</option>
+                            <option value="90">3 months</option>
+                            <option value="180">6 months</option>
+                            <option value="365">1 year</option>
+                        </select>
+                        <button type="submit" class="full">Create goal</button>
+                        <p id="goalMessage" class="message" role="status" aria-live="polite"></p>
+                    </form>
                 </div>
-                <ul id="txList" class="tx-list"></ul>
-                <div class="more" id="moreWrap" hidden>
-                    <button id="moreButton" class="quiet" type="button">Show older activity</button>
+                <section aria-label="Your goals">
+                    <ul class="goal-list" id="goalList"></ul>
+                </section>
+            </div>
+        </section>
+
+        <!-- ============================ LOANS ============================ -->
+        <section data-view-panel="loans" hidden>
+            <div class="page-head">
+                <span class="mono">Instant loans</span>
+                <h2 class="view-title">Loans</h2>
+                <p>Borrow straight into your wallet. Your limit grows with the money you receive, and a one-off fee is added when you borrow.</p>
+            </div>
+            <div class="dashboard">
+                <div class="stack">
+                    <section class="console" id="limitCard">
+                        <div class="console-head"><span class="mono">You can borrow up to</span><span class="mono" id="loanTerms"></span></div>
+                        <div class="balance-amount"><span class="currency" data-currency></span><span class="value" id="loanLimit">0.00</span></div>
+                        <p class="hint" id="loanReason"></p>
+                    </section>
+
+                    <form class="console" id="loanForm" novalidate>
+                        <div class="console-head"><span class="mono">Borrow</span></div>
+                        <label for="loanAmount">Amount</label>
+                        <input id="loanAmount" type="number" inputmode="decimal" min="1" step="0.01" placeholder="0.00">
+                        <dl class="calc" id="loanCalc"></dl>
+                        <button type="submit" class="full" id="loanButton">Borrow now</button>
+                        <p id="loanMessage" class="message" role="status" aria-live="polite"></p>
+                    </form>
                 </div>
-            </section>
-        </div>
+
+                <div class="stack">
+                    <section class="console" id="activeLoan" hidden>
+                        <div class="console-head"><span class="mono">Current loan</span><span class="mono" id="loanDue"></span></div>
+                        <div class="balance-amount"><span class="currency" data-currency></span><span class="value" id="loanOutstanding">0.00</span></div>
+                        <div class="progress" aria-hidden="true"><i id="loanProgress"></i></div>
+                        <p class="hint" id="loanProgressText"></p>
+                        <form id="repayForm" class="inline-form" novalidate>
+                            <label for="repayAmount" class="visually-hidden">Repayment amount</label>
+                            <input id="repayAmount" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="Amount to repay">
+                            <button type="submit">Repay</button>
+                            <button type="button" class="quiet" id="repayAll">Pay all</button>
+                        </form>
+                        <p id="repayMessage" class="message" role="status" aria-live="polite"></p>
+                    </section>
+
+                    <section class="console">
+                        <div class="console-head"><span class="mono">Loan history</span></div>
+                        <ul class="simple-list" id="loanHistory"></ul>
+                    </section>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================ REQUESTS ============================ -->
+        <section data-view-panel="requests" hidden>
+            <div class="page-head">
+                <span class="mono">Money requests</span>
+                <h2 class="view-title">Requests</h2>
+                <p>Ask another SecureWallet user for money. When someone pays your request, it arrives as an ordinary transfer and is checked for fraud like any other.</p>
+            </div>
+            <div class="dashboard">
+                <form class="console" id="requestForm" novalidate>
+                    <div class="console-head"><span class="mono">New request</span></div>
+                    <label for="reqEmail">Ask</label>
+                    <input id="reqEmail" type="email" autocomplete="off" placeholder="name@example.com">
+                    <label for="reqAmount">Amount</label>
+                    <input id="reqAmount" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="0.00">
+                    <label for="reqNote">Note (optional)</label>
+                    <input id="reqNote" maxlength="120" placeholder="What it's for">
+                    <button type="submit" class="full">Send request</button>
+                    <p id="reqMessage" class="message" role="status" aria-live="polite"></p>
+                </form>
+                <div class="stack">
+                    <section class="console">
+                        <div class="console-head"><span class="mono">Requested from you</span></div>
+                        <ul class="req-list" id="reqIncoming"></ul>
+                    </section>
+                    <section class="console">
+                        <div class="console-head"><span class="mono">Your requests</span></div>
+                        <ul class="req-list" id="reqOutgoing"></ul>
+                    </section>
+                </div>
+            </div>
+        </section>
     </main>
+
+    <nav class="bottom-nav" aria-label="Wallet sections">
+        <a href="#home" data-view="home"><span class="action-icon" data-icon="home"></span>Home</a>
+        <a href="#savings" data-view="savings"><span class="action-icon" data-icon="savings"></span>Savings</a>
+        <a href="#loans" data-view="loans"><span class="action-icon" data-icon="loan"></span>Loans</a>
+        <a href="#requests" data-view="requests"><span class="action-icon" data-icon="request"></span>Requests</a>
+    </nav>
 
     <dialog id="receipt" aria-labelledby="receiptTitle">
         <div class="receipt">

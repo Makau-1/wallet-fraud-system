@@ -5,6 +5,7 @@ const db = require('../config/db');
 const {
     scoreAndRecordTransaction,
 } = require('../services/fraudService');
+const { amountError } = require('../services/ledger');
 
 
 // ==================================================
@@ -60,13 +61,11 @@ async function deposit(req, res) {
             });
         }
 
-        if (
-            typeof amount !== 'number' ||
-            !Number.isFinite(amount) ||
-            amount <= 0
-        ) {
+        // Positive, at most two decimal places, and within the system limit.
+        const amountProblem = amountError(amount);
+        if (amountProblem) {
             return res.status(400).json({
-                message: 'Amount must be a positive number',
+                message: amountProblem,
             });
         }
 
@@ -165,13 +164,11 @@ async function withdraw(req, res) {
             });
         }
 
-        if (
-            typeof amount !== 'number' ||
-            !Number.isFinite(amount) ||
-            amount <= 0
-        ) {
+        // Positive, at most two decimal places, and within the system limit.
+        const amountProblem = amountError(amount);
+        if (amountProblem) {
             return res.status(400).json({
-                message: 'Amount must be a positive number',
+                message: amountProblem,
             });
         }
 
@@ -348,13 +345,11 @@ async function transfer(req, res) {
             });
         }
 
-        if (
-            typeof amount !== 'number' ||
-            !Number.isFinite(amount) ||
-            amount <= 0
-        ) {
+        // Positive, at most two decimal places, and within the system limit.
+        const amountProblem = amountError(amount);
+        if (amountProblem) {
             return res.status(400).json({
-                message: 'Amount must be a positive number',
+                message: amountProblem,
             });
         }
 
@@ -625,7 +620,15 @@ async function getHistory(req, res) {
                 item.balance_after = Number(meta[`${side}_balance_after`]);
             }
 
-            if (tx.direction === 'out') {
+            // Only these types are scored by the fraud model; payments,
+            // savings and loan movements are recorded without a score.
+            const scoredTypes = ['transfer', 'withdrawal', 'bank_transfer'];
+            const details = {};
+            ['vault_name', 'bank', 'account_masked', 'kind', 'number', 'account', 'loan_id', 'fee']
+                .forEach(key => { if (meta && meta[key] !== undefined) details[key] = meta[key]; });
+            if (Object.keys(details).length) item.details = details;
+
+            if (tx.direction === 'out' && scoredTypes.includes(item.type)) {
                 item.fraud_check = {
                     scoring_status: tx.scoring_status,
                     fraud_score: tx.fraud_score === null ? null : Number(tx.fraud_score),

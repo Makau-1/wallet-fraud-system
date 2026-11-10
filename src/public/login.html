@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureWallet | Sign in</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="auth">
+    <header class="auth-top">
+        <a class="brand" href="index.html">
+            <img class="brand-logo" src="img/webmasters-logo.png" alt="Webmasters">
+            <span class="brand-divider" aria-hidden="true"></span>
+            <span class="brand-product">SecureWallet</span>
+        </a>
+    </header>
+
+    <main class="auth-layout">
+        <section class="hero" aria-label="About SecureWallet">
+            <h1>Every transfer, <em>checked</em> as it happens.</h1>
+            <p>Send, withdraw and track your money. A Random Forest fraud model scores each transfer and withdrawal the moment you make it, and anything unusual goes to an analyst for review.</p>
+            <div class="console" aria-label="Service status">
+                <div class="console-head">
+                    <span class="mono">SecureWallet console</span>
+                    <span class="mono" id="statusTime"></span>
+                </div>
+                <ul class="console-rows" id="statusRows">
+                    <li><span>Wallet service</span><span class="mono" data-service="wallet"><span class="dot idle"></span>Checking</span></li>
+                    <li><span>Transaction database</span><span class="mono" data-service="database"><span class="dot idle"></span>Checking</span></li>
+                    <li><span>Fraud scoring model</span><span class="mono" data-service="scoring"><span class="dot idle"></span>Checking</span></li>
+                </ul>
+            </div>
+        </section>
+
+        <section>
+            <form id="loginForm" class="auth-card" novalidate>
+                <span class="mono">Sign in</span>
+                <h2 style="margin-top:10px">Welcome back</h2>
+                <p class="lead">Use the email and password you registered with.</p>
+
+                <label for="email">Email address</label>
+                <input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+
+                <label for="password">Password</label>
+                <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+                <button id="loginButton" type="submit">Sign in</button>
+                <p id="message" class="message" role="status" aria-live="polite"></p>
+
+                <p class="auth-switch">New to SecureWallet? <a href="register.html">Create an account</a></p>
+            </form>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <span class="mono">A Webmasters project</span>
+        <span class="mono">Simulated wallet &middot; no real money moves</span>
+    </footer>
+    <script src="app.js"></script>
+</body>
+</html>

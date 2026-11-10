@@ -3,55 +3,145 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SecureWallet | Sign in</title>
+    <title>SecureWallet | Send, save and borrow with fraud checks built in</title>
+    <meta name="description" content="SecureWallet is a simulated digital wallet by Webmasters. Send money, pay bills, save and borrow, with every transfer checked by a Random Forest fraud model.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
-<body data-page="auth">
-    <header class="auth-top">
+<body data-page="landing">
+    <header class="topbar landing-top">
         <a class="brand" href="index.html">
             <img class="brand-logo" src="img/webmasters-logo.png" alt="Webmasters">
             <span class="brand-divider" aria-hidden="true"></span>
             <span class="brand-product">SecureWallet</span>
         </a>
+        <nav class="views-nav" aria-label="Page sections">
+            <a href="#features">Features</a>
+            <a href="#how">How fraud checks work</a>
+            <a href="#savings-loans">Save and borrow</a>
+        </nav>
+        <div class="who" id="landingActions">
+            <a class="button quiet" href="login.html">Sign in</a>
+            <a class="button" href="register.html">Open a wallet</a>
+        </div>
     </header>
 
-    <main class="auth-layout">
-        <section class="hero" aria-label="About SecureWallet">
-            <h1>Every transfer, <em>checked</em> as it happens.</h1>
-            <p>Send, withdraw and track your money. A Random Forest fraud model scores each transfer and withdrawal the moment you make it, and anything unusual goes to an analyst for review.</p>
-            <div class="console" aria-label="Service status">
-                <div class="console-head">
-                    <span class="mono">SecureWallet console</span>
-                    <span class="mono" id="statusTime"></span>
+    <main>
+        <!-- Hero -->
+        <section class="landing-hero">
+            <div class="hero-copy">
+                <span class="mono"><span class="dot ok"></span>Digital wallet &middot; fraud checks built in</span>
+                <h1>Money that moves fast. <em>Fraud</em> that doesn't.</h1>
+                <p>Send money, pay bills, buy airtime, save towards a goal and borrow in seconds. A machine learning model checks every transfer and withdrawal the moment you make it, and an analyst reviews anything that looks wrong.</p>
+                <div class="cta-row" id="heroActions">
+                    <a class="button big" href="register.html">Open a free wallet</a>
+                    <a class="button quiet big" href="login.html">Sign in</a>
                 </div>
-                <ul class="console-rows" id="statusRows">
-                    <li><span>Wallet service</span><span class="mono" data-service="wallet"><span class="dot idle"></span>Checking</span></li>
-                    <li><span>Transaction database</span><span class="mono" data-service="database"><span class="dot idle"></span>Checking</span></li>
-                    <li><span>Fraud scoring model</span><span class="mono" data-service="scoring"><span class="dot idle"></span>Checking</span></li>
-                </ul>
+                <p class="mono fine">A simulated wallet for research and demonstration. No real money moves.</p>
+            </div>
+
+            <div class="hero-visual" aria-label="Service status">
+                <div class="console">
+                    <div class="console-head">
+                        <span class="mono">SecureWallet console</span>
+                        <span class="mono" id="statusTime"></span>
+                    </div>
+                    <ul class="console-rows">
+                        <li><span>Wallet service</span><span class="mono" data-service="wallet"><span class="dot idle"></span>Checking</span></li>
+                        <li><span>Transaction database</span><span class="mono" data-service="database"><span class="dot idle"></span>Checking</span></li>
+                        <li><span>Fraud scoring model</span><span class="mono" data-service="scoring"><span class="dot idle"></span>Checking</span></li>
+                    </ul>
+                    <div class="console-foot">
+                        <span class="mono">Alert threshold</span><span class="mono strong">0.50</span>
+                    </div>
+                    <div class="console-foot">
+                        <span class="mono">Scoring timeout</span><span class="mono strong">2 s, fail-open</span>
+                    </div>
+                </div>
+                <div class="float-card float-ok" aria-hidden="true">
+                    <span class="toast-icon">&#10003;</span>
+                    <div><strong>Transfer sent</strong><span class="mono">Risk 0.21 &middot; check passed</span></div>
+                </div>
+                <div class="float-card float-flag" aria-hidden="true">
+                    <span class="toast-icon">!</span>
+                    <div><strong>Held for review</strong><span class="mono">Risk 0.75 &middot; wallet emptied</span></div>
+                </div>
             </div>
         </section>
 
-        <section>
-            <form id="loginForm" class="auth-card" novalidate>
-                <span class="mono">Sign in</span>
-                <h2 style="margin-top:10px">Welcome back</h2>
-                <p class="lead">Use the email and password you registered with.</p>
+        <!-- Features -->
+        <section class="landing-section" id="features" aria-labelledby="featuresHeading">
+            <span class="mono">Everything in one wallet</span>
+            <h2 id="featuresHeading">Everyday money, in a few taps</h2>
+            <ul class="feature-grid">
+                <li class="console feature"><span class="action-icon" data-icon="send"></span><h3>Send and request</h3><p>Send money to anyone with a SecureWallet account, or ask them for it. Recent recipients are one tap away.</p></li>
+                <li class="console feature"><span class="action-icon" data-icon="bank"></span><h3>Send to a bank</h3><p>Move money from your wallet to an account at any of ten Kenyan banks.</p></li>
+                <li class="console feature"><span class="action-icon" data-icon="paybill"></span><h3>Pay bill and buy goods</h3><p>Pay businesses by business number and account, or shops by till number.</p></li>
+                <li class="console feature"><span class="action-icon" data-icon="airtime"></span><h3>Airtime</h3><p>Top up any Kenyan phone number straight from your balance.</p></li>
+                <li class="console feature"><span class="action-icon" data-icon="savings"></span><h3>Locked savings</h3><p>Create goals with a target and a lock date. Locked money cannot be spent until the date arrives.</p></li>
+                <li class="console feature"><span class="action-icon" data-icon="loan"></span><h3>Instant loans</h3><p>Borrow into your wallet with a limit that grows with the money you receive, and repay in parts.</p></li>
+                <li class="console feature"><span class="action-icon" data-icon="statement"></span><h3>Receipts and statements</h3><p>Every transaction has a printable receipt, and you can download your full statement as a spreadsheet.</p></li>
+                <li class="console feature"><span class="action-icon" data-icon="shield"></span><h3>Fraud review</h3><p>See which of your transactions were checked, which are under review and what the analyst decided.</p></li>
+            </ul>
+        </section>
 
-                <label for="email">Email address</label>
-                <input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+        <!-- How it works -->
+        <section class="landing-section" id="how" aria-labelledby="howHeading">
+            <span class="mono">How fraud checks work</span>
+            <h2 id="howHeading">Checked in milliseconds, reviewed by a person</h2>
+            <ol class="steps">
+                <li class="console">
+                    <span class="step-num">01</span>
+                    <h3>You make a transaction</h3>
+                    <p>Transfers, withdrawals and bank transfers are recorded straight away, so your money is never held up waiting for a check.</p>
+                </li>
+                <li class="console">
+                    <span class="step-num">02</span>
+                    <h3>The model scores it</h3>
+                    <p>A Random Forest trained on the PaySim mobile money dataset scores the transaction from its amount, type and the balances before and after.</p>
+                </li>
+                <li class="console">
+                    <span class="step-num">03</span>
+                    <h3>An analyst reviews alerts</h3>
+                    <p>Anything scoring 0.50 or more goes to the fraud review queue, where an analyst confirms it as fraud or clears it. You see the outcome in your activity.</p>
+                </li>
+            </ol>
+            <div class="stat-band">
+                <div><span class="num">0.982</span><span class="mono">F1-score at about 1% fraud</span></div>
+                <div><span class="num">1.000</span><span class="mono">PR-AUC at about 1% fraud</span></div>
+                <div><span class="num">7</span><span class="mono">Transaction features scored</span></div>
+            </div>
+            <p class="fine">Scores measured on held-out PaySim test data, which is simulated. Real-world performance would be lower and has not been measured.</p>
+        </section>
 
-                <label for="password">Password</label>
-                <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <!-- Save and borrow -->
+        <section class="landing-section split" id="savings-loans" aria-labelledby="saveHeading">
+            <div>
+                <span class="mono">Save and borrow</span>
+                <h2 id="saveHeading">Put money away, or get some when you need it</h2>
+                <p>Lock money in a savings goal for 7 days to a year, or keep a flexible goal you can withdraw any time. When you are short, borrow up to 30% of what you received in the last 30 days, with a single 7.5% fee and 30 days to repay.</p>
+                <p>Accounts with a transaction confirmed as fraud cannot borrow for 90 days, so the fraud checks protect lending too.</p>
+            </div>
+            <div class="console mini-goal" aria-hidden="true">
+                <div class="console-head"><span class="mono">School fees</span><span class="mono"><span class="dot ok"></span>Locked &middot; 62 days left</span></div>
+                <div class="goal-amount">12,500.00 <small>of 20,000.00</small></div>
+                <div class="progress"><i style="width:62.5%"></i></div>
+                <div class="console-head loan-row"><span class="mono">Current loan</span><span class="mono">Due in 18 days</span></div>
+                <div class="goal-amount">675.00 <small>left of 1,075.00</small></div>
+                <div class="progress safe"><i style="width:37%"></i></div>
+            </div>
+        </section>
 
-                <button id="loginButton" type="submit">Sign in</button>
-                <p id="message" class="message" role="status" aria-live="polite"></p>
-
-                <p class="auth-switch">New to SecureWallet? <a href="register.html">Create an account</a></p>
-            </form>
+        <!-- Final call to action -->
+        <section class="landing-cta">
+            <h2>Open your wallet in under a minute</h2>
+            <p>All you need is a name, an email address and a password.</p>
+            <div class="cta-row" id="footerActions">
+                <a class="button big" href="register.html">Create an account</a>
+                <a class="button quiet big" href="login.html">I already have one</a>
+            </div>
         </section>
     </main>
 

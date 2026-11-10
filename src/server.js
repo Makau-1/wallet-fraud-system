@@ -11,6 +11,7 @@ const authRoutes = require('./routes/authRoutes');
 const testRoutes = require('./routes/testRoutes');
 const walletRoutes = require('./routes/walletRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const servicesRoutes = require('./routes/servicesRoutes');
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/test', testRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api', servicesRoutes);
 
 // API health-check route
 app.get('/api', (req, res) => {

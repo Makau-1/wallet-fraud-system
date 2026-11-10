@@ -1,5 +1,5 @@
 {
-  "run": "2026-11-10 05:30:15",
+  "run": "2026-11-10 06:37:05",
   "base": "http://localhost:3000",
   "results": [
     {
@@ -47,7 +47,7 @@
       "requirement": "FR-03",
       "description": "Deposit a positive amount",
       "expected": "Balance increases; transaction recorded",
-      "actual": "HTTP 200; balance 0.00 to 5000.00; transaction #11 recorded",
+      "actual": "HTTP 200; balance 0.00 to 5000.00; transaction #28 recorded",
       "status": "Pass"
     },
     {
@@ -71,7 +71,7 @@
       "requirement": "FR-05",
       "description": "Transfer between two users",
       "expected": "Both balances update atomically; one transaction row",
-      "actual": "HTTP 200; sender 5000.00 to 4800.00; recipient 0.00 to 200.00; one row #12",
+      "actual": "HTTP 200; sender 5000.00 to 4800.00; recipient 0.00 to 200.00; one row #29",
       "status": "Pass"
     },
     {
@@ -103,7 +103,7 @@
       "requirement": "FR-07",
       "description": "Transfer that drains the sender balance",
       "expected": "Scored at or above the threshold; pending alert created",
-      "actual": "HTTP 200; fraud score 0.751667; alert #3 pending; transfer completed: true",
+      "actual": "HTTP 200; fraud score 0.751667; alert #8 pending; transfer completed: true",
       "status": "Pass"
     },
     {
@@ -111,7 +111,7 @@
       "requirement": "FR-08",
       "description": "Administrator confirms and dismisses alerts",
       "expected": "Status set to confirmed_fraud or cleared with reviewer and time",
-      "actual": "Confirm HTTP 200, dismiss HTTP 200; #3 confirmed_fraud, #4 cleared; reviewer and time recorded: true; second review refused: HTTP 409",
+      "actual": "Confirm HTTP 200, dismiss HTTP 200; #8 confirmed_fraud, #9 cleared; reviewer and time recorded: true; second review refused: HTTP 409",
       "status": "Pass"
     },
     {
@@ -129,6 +129,86 @@
       "expected": "Transfer completes; marked unscored",
       "actual": "Run separately: stop the scoring service, then node tests/run-tests.js --tc16",
       "status": "Not run"
+    },
+    {
+      "id": "TC-17",
+      "requirement": "FR-09",
+      "description": "Create a locked savings goal and move money into it",
+      "expected": "Goal created; wallet debited; goal balance credited; recorded as savings_deposit",
+      "actual": "Create HTTP 201; deposit HTTP 200; wallet 2000.00 to 1500.00; goal holds 500; recorded as savings_deposit",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-18",
+      "requirement": "FR-09",
+      "description": "Withdraw from a goal before its unlock date",
+      "expected": "HTTP 409; wallet and goal unchanged",
+      "actual": "HTTP 409 \"This goal is locked until 10 Dec 2026\"; wallet unchanged: true; goal still holds 500",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-19",
+      "requirement": "FR-09",
+      "description": "Withdraw everything from a goal with no lock",
+      "expected": "Money returned to wallet; goal closed; recorded as savings_release",
+      "actual": "HTTP 200; wallet 1200.00 to 1500.00; goal closed; recorded as savings_release",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-20",
+      "requirement": "FR-10",
+      "description": "Loan limit follows recent inflow",
+      "expected": "Limit is 30% of money received in the last 30 days, rounded down to 50",
+      "actual": "HTTP 200; received 2,000.00; limit 600; eligible: true",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-21",
+      "requirement": "FR-10",
+      "description": "Take a loan within the limit, then apply again",
+      "expected": "Wallet credited; amount due includes 7.5% fee; second application refused",
+      "actual": "HTTP 201; wallet 1500.00 to 1900.00; due 430 by 2026-12-10; second application HTTP 409",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-22",
+      "requirement": "FR-10",
+      "description": "Repay a loan in two parts",
+      "expected": "Overpayment refused; partial then final repayment clears the loan",
+      "actual": "Overpay HTTP 400; part HTTP 200 (230 left); final HTTP 200; loan repaid",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-23",
+      "requirement": "FR-10",
+      "description": "Borrow after a transaction was confirmed as fraud",
+      "expected": "Loan refused with a fraud-related reason",
+      "actual": "Eligible: false; \"Loans are unavailable because a recent transaction on this account was confirmed as fraud.\"; application HTTP 409",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-24",
+      "requirement": "FR-11",
+      "description": "Bank transfer, and one with an invalid account number",
+      "expected": "Valid transfer debits the wallet and is fraud-scored as a cash-out; invalid one rejected",
+      "actual": "Invalid HTTP 400; valid HTTP 200; wallet 1470.00 to 1220.00; scored, fraud score 0.485000",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-25",
+      "requirement": "FR-11",
+      "description": "Pay bill, buy goods and airtime",
+      "expected": "Each payment debits the wallet without a fraud score; invalid numbers rejected",
+      "actual": "Invalid HTTP 400; payments HTTP 200, 200, 200; wallet 1220.00 to 1050.00; no fraud check shown: true",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-26",
+      "requirement": "FR-12",
+      "description": "Request money, pay it, and decline another",
+      "expected": "Request paid through a scored transfer; mismatched or reused transfer refused; decline recorded",
+      "actual": "Create HTTP 201; wrong amount HTTP 400; paid HTTP 200 (transfer scored); reused transfer HTTP 400; decline HTTP 200; statuses paid, declined",
+      "status": "Pass"
     }
   ]
 }
