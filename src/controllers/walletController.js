@@ -86,6 +86,15 @@ async function deposit(req, res) {
         try {
             await connection.beginTransaction();
 
+            // Lock the wallet so the recorded before and after balances
+            // match the update exactly.
+            const [locked] = await connection.execute(
+                `SELECT balance FROM wallets WHERE id = ? FOR UPDATE`,
+                [wallet.id]
+            );
+            const balanceBefore = Number(locked[0].balance);
+            const balanceAfter = Math.round((balanceBefore + amount) * 100) / 100;
+
             await connection.execute(
                 `UPDATE wallets
                  SET balance = balance + ?
@@ -101,7 +110,11 @@ async function deposit(req, res) {
                 [
                     amount,
                     wallet.id,
-                    JSON.stringify({ type: 'deposit' }),
+                    JSON.stringify({
+                        type: 'deposit',
+                        receiver_balance_before: balanceBefore,
+                        receiver_balance_after: balanceAfter,
+                    }),
                 ]
             );
 
@@ -603,6 +616,14 @@ async function getHistory(req, res) {
                     ? { name: tx.receiver_name, email: tx.receiver_email }
                     : { name: tx.sender_name, email: tx.sender_email },
             };
+
+            // The viewer's own balance before and after, for receipts.
+            // Older records made before these were stored have none.
+            const side = tx.direction === 'out' ? 'sender' : 'receiver';
+            if (meta && meta[`${side}_balance_before`] !== undefined) {
+                item.balance_before = Number(meta[`${side}_balance_before`]);
+                item.balance_after = Number(meta[`${side}_balance_after`]);
+            }
 
             if (tx.direction === 'out') {
                 item.fraud_check = {

@@ -6,44 +6,63 @@
     <title>SecureWallet | Create an account</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-page="auth">
+    <header class="auth-top">
+        <a class="brand" href="index.html">
+            <img class="brand-logo" src="img/webmasters-logo.png" alt="Webmasters">
+            <span class="brand-divider" aria-hidden="true"></span>
+            <span class="brand-product">SecureWallet</span>
+        </a>
+    </header>
+
     <main class="auth-layout">
-        <section class="brand-panel" aria-label="About SecureWallet">
-            <svg class="guilloche rosette" aria-hidden="true"><use href="guilloche.svg#rosette"/></svg>
-            <svg class="guilloche band" aria-hidden="true" preserveAspectRatio="none"><use href="guilloche.svg#band"/></svg>
-            <a class="brand" href="index.html"><span class="brand-mark">S</span> SecureWallet</a>
-            <div class="brand-copy">
-                <h1>A wallet that watches for fraud.</h1>
-                <p>Create an account and you get a wallet straight away. Deposit, send money to other users and see every transaction in one place.</p>
+        <section class="hero" aria-label="About SecureWallet">
+            <h1>Every transfer, <em>checked</em> as it happens.</h1>
+            <p>Send, withdraw and track your money. A Random Forest fraud model scores each transfer and withdrawal the moment you make it, and anything unusual goes to an analyst for review.</p>
+            <div class="console" aria-label="Service status">
+                <div class="console-head">
+                    <span class="mono">SecureWallet console</span>
+                    <span class="mono" id="statusTime"></span>
+                </div>
+                <ul class="console-rows" id="statusRows">
+                    <li><span>Wallet service</span><span class="mono" data-service="wallet"><span class="dot idle"></span>Checking</span></li>
+                    <li><span>Transaction database</span><span class="mono" data-service="database"><span class="dot idle"></span>Checking</span></li>
+                    <li><span>Fraud scoring model</span><span class="mono" data-service="scoring"><span class="dot idle"></span>Checking</span></li>
+                </ul>
             </div>
-            <p class="brand-footer">A simulated wallet for research and teaching. No real money moves.</p>
         </section>
 
-        <section class="auth-panel">
+        <section>
             <form id="registerForm" class="auth-card" novalidate>
-                <h2>Create an account</h2>
-                <p class="lead">Your wallet opens with a balance of 0.00.</p>
+                <span class="mono">Create an account</span>
+                <h2 style="margin-top:10px">Open your wallet</h2>
+                <p class="lead">Your wallet is created with a balance of 0.00.</p>
 
                 <label for="name">Full name</label>
-                <input id="name" name="name" type="text" autocomplete="name" maxlength="255" required>
+                <input id="name" name="name" type="text" autocomplete="name" required>
 
                 <label for="email">Email address</label>
                 <input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
 
                 <label for="password">Password</label>
-                <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" aria-describedby="passwordHint" required>
-                <p id="passwordHint" class="hint">At least 8 characters.</p>
+                <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required>
+                <p class="hint">At least 8 characters.</p>
 
                 <button id="registerButton" type="submit">Create account</button>
                 <p id="message" class="message" role="status" aria-live="polite"></p>
 
-                <p class="auth-switch">Already have an account? <a href="index.html">Sign in</a></p>
+                <p class="auth-switch">Already registered? <a href="index.html">Sign in</a></p>
             </form>
         </section>
     </main>
+
+    <footer class="site-footer">
+        <span class="mono">A Webmasters project</span>
+        <span class="mono">Simulated wallet &middot; no real money moves</span>
+    </footer>
     <script src="app.js"></script>
 </body>
 </html>

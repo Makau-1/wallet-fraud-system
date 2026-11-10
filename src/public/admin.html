@@ -6,12 +6,16 @@
     <title>SecureWallet | Fraud review</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body data-page="admin">
     <header class="topbar">
-        <a class="brand" href="admin.html"><span class="brand-mark">S</span> SecureWallet</a>
+        <a class="brand" href="admin.html">
+            <img class="brand-logo" src="img/webmasters-logo.png" alt="Webmasters">
+            <span class="brand-divider" aria-hidden="true"></span>
+            <span class="brand-product">SecureWallet</span>
+        </a>
         <div class="who">
             <span id="userName"></span>
             <button id="logoutButton" class="quiet" type="button">Log out</button>
@@ -20,8 +24,16 @@
 
     <main class="page">
         <div class="page-head">
-            <h1>Fraud review</h1>
-            <p>Transfers and withdrawals the model scored at 0.50 or above. The money has already moved; your decision records whether the transaction was fraud.</p>
+            <span class="mono">Fraud operations</span>
+            <h1 style="margin-top:10px">Fraud review</h1>
+            <p>Transfers and withdrawals the model scored at or above the alert threshold. The money has already moved; your decision records whether the transaction was fraud.</p>
+        </div>
+
+        <div class="stats">
+            <div class="console stat"><span class="mono"><span class="dot ok"></span>Waiting</span><div class="num" id="stat-pending">0</div></div>
+            <div class="console stat"><span class="mono"><span class="dot bad"></span>Confirmed fraud</span><div class="num" id="stat-confirmed_fraud">0</div></div>
+            <div class="console stat"><span class="mono"><span class="dot safe"></span>Dismissed</span><div class="num" id="stat-cleared">0</div></div>
+            <div class="console stat"><span class="mono">Scoring model</span><div class="num small" id="scoringStatus"><span class="dot idle"></span>Checking</div></div>
         </div>
 
         <div class="tabs" role="tablist" aria-label="Alert status">

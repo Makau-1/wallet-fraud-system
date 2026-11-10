@@ -6,12 +6,16 @@
     <title>SecureWallet | My wallet</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body data-page="dashboard">
     <header class="topbar">
-        <a class="brand" href="dashboard.html"><span class="brand-mark">S</span> SecureWallet</a>
+        <a class="brand" href="dashboard.html">
+            <img class="brand-logo" src="img/webmasters-logo.png" alt="Webmasters">
+            <span class="brand-divider" aria-hidden="true"></span>
+            <span class="brand-product">SecureWallet</span>
+        </a>
         <div class="who">
             <span id="userName"></span>
             <button id="logoutButton" class="quiet" type="button">Log out</button>
@@ -19,26 +23,24 @@
     </header>
 
     <main class="page">
+        <h1 class="visually-hidden">My wallet</h1>
         <div class="dashboard">
-            <section aria-labelledby="walletHeading">
-                <h1 id="walletHeading" class="visually-hidden">My wallet</h1>
-
-                <div class="note" aria-live="polite">
-                    <svg class="guilloche rosette" aria-hidden="true"><use href="guilloche.svg#rosette"/></svg>
-                    <div class="note-top">
-                        <span class="note-issuer">SecureWallet</span>
-                        <span class="note-serial" id="walletSerial" title="Wallet number"></span>
+            <div class="stack">
+                <section class="console" aria-labelledby="balanceLabel">
+                    <div class="console-head">
+                        <span class="mono" id="balanceLabel">Available balance</span>
+                        <span class="mono" id="walletSerial"></span>
                     </div>
-                    <div class="note-amount">
+                    <div class="balance-amount" aria-live="polite">
                         <span class="currency" id="currency"></span><span class="value" id="balance">0.00</span>
                     </div>
-                    <div class="note-bottom">
-                        <span>Available balance</span>
+                    <div class="balance-foot">
                         <span id="holderName"></span>
+                        <span class="mono" id="scoringStatus"><span class="dot idle"></span>Fraud monitoring</span>
                     </div>
-                </div>
+                </section>
 
-                <div class="mover">
+                <section class="console" aria-label="Move money">
                     <div class="segmented" role="tablist" aria-label="Move money">
                         <button type="button" role="tab" id="tab-deposit" aria-controls="moveForm" aria-selected="true" data-action="deposit">Deposit</button>
                         <button type="button" role="tab" id="tab-withdraw" aria-controls="moveForm" aria-selected="false" data-action="withdraw">Withdraw</button>
@@ -49,6 +51,7 @@
                         <div id="recipientField" hidden>
                             <label for="recipientEmail">Recipient's email</label>
                             <input id="recipientEmail" type="email" autocomplete="off" placeholder="name@example.com">
+                            <div class="recent" id="recentRecipients" role="group" aria-label="Recent recipients"></div>
                         </div>
 
                         <label for="amount">Amount</label>
@@ -58,13 +61,25 @@
                         <button id="moveButton" type="submit">Deposit money</button>
                         <p id="moveMessage" class="message" role="status" aria-live="polite"></p>
                     </form>
-                </div>
-            </section>
 
-            <section class="activity" aria-labelledby="activityHeading">
+                    <div id="reviewPanel" class="review" hidden>
+                        <span class="mono">Review before you confirm</span>
+                        <h3 id="reviewTitle" style="margin-top:10px"></h3>
+                        <dl id="reviewRows"></dl>
+                        <div id="reviewNotice" class="notice" hidden></div>
+                        <div class="actions">
+                            <button id="reviewBack" class="quiet" type="button">Edit</button>
+                            <button id="reviewConfirm" type="button" aria-describedby="reviewNotice">Confirm</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <section class="console" aria-labelledby="activityHeading">
+                <div id="reviewBanner" class="banner" hidden></div>
                 <div class="activity-head">
                     <h2 id="activityHeading">Activity</h2>
-                    <span id="activityCount"></span>
+                    <span class="mono" id="activityCount"></span>
                 </div>
                 <ul id="txList" class="tx-list"></ul>
                 <div class="more" id="moreWrap" hidden>
@@ -73,6 +88,25 @@
             </section>
         </div>
     </main>
+
+    <dialog id="receipt" aria-labelledby="receiptTitle">
+        <div class="receipt">
+            <div class="console-head">
+                <span class="mono">SecureWallet receipt</span>
+                <span class="mono" id="receiptRef"></span>
+            </div>
+            <div class="receipt-amount" id="receiptAmount"></div>
+            <div class="receipt-title" id="receiptTitle"></div>
+            <dl id="receiptRows"></dl>
+            <p class="receipt-foot mono">A Webmasters project &middot; simulated, no real money moved</p>
+            <div class="actions">
+                <button id="receiptPrint" class="quiet" type="button">Print</button>
+                <button id="receiptClose" type="button">Close</button>
+            </div>
+        </div>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"><span class="toast-icon" aria-hidden="true">&#10003;</span><div><strong id="toastTitle"></strong><span class="mono" id="toastDetail"></span></div></div>
     <script src="app.js"></script>
 </body>
 </html>
