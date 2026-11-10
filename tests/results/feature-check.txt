@@ -1,0 +1,4 @@
+Feature consistency check
+Records checked: 200
+Mismatches: 0
+Result: Pass

@@ -1,0 +1,14 @@
+{
+  "run": "2026-11-10 05:32:47",
+  "base": "http://localhost:3000",
+  "results": [
+    {
+      "id": "TC-16",
+      "requirement": "NFR-03",
+      "description": "Transfer while the inference service is stopped",
+      "expected": "Transfer completes; marked unscored",
+      "actual": "HTTP 200; unscored; fraud score null; response in 98 ms",
+      "status": "Pass"
+    }
+  ]
+}
