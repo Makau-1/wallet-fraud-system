@@ -1,10 +1,12 @@
-pandas
-numpy
+# Versions tested for the project report (Chapter 5, Table 5.3)
+pandas==3.0.5
+numpy==2.5.3
+scikit-learn==1.9.1
+joblib==1.6.0
+fastapi==0.143.0
+uvicorn==0.54.0
+# Installed alongside the above; versions follow their requirements
 scipy
-scikit-learn
-joblib
-fastapi
-uvicorn
 pydantic
 jupyterlab
 notebook
