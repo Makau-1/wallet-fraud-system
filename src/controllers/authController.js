@@ -43,6 +43,14 @@ const register = async (req, res) => {
             });
         }
 
+        // Addresses in this domain belong to the attack lab, whose clean-up
+        // deletes them, so nobody may register one.
+        if (email.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').endsWith('@lab.securewallet')) {
+            return res.status(400).json({
+                message: 'That email address cannot be used'
+            });
+        }
+
         const existingUser = await userModel.findUserByEmail(email);
 
         if (existingUser) {
@@ -207,7 +215,7 @@ const me = async (req, res) => {
         }
 
         const [rows] = await db.execute(
-            'SELECT id, name, email, role FROM users WHERE id = ? LIMIT 1',
+            'SELECT id, name, email, role, (pin_hash IS NOT NULL) AS has_pin FROM users WHERE id = ? LIMIT 1',
             [req.session.userId]
         );
 
@@ -217,7 +225,8 @@ const me = async (req, res) => {
             });
         }
 
-        return res.status(200).json({ user: rows[0] });
+        const { has_pin: hasPin, ...user } = rows[0];
+        return res.status(200).json({ user: { ...user, hasPin: Boolean(Number(hasPin)) } });
 
     } catch (error) {
         console.error('Current user error:', error.message);
@@ -228,9 +237,74 @@ const me = async (req, res) => {
     }
 };
 
+// ==================================================
+// TRANSACTION PIN
+// A 4-digit PIN used to confirm payments the risk engine
+// finds unusual. Setting or changing it needs the account
+// password, so a stolen session alone cannot set a new PIN.
+// The PIN is stored only as a bcrypt hash.
+// ==================================================
+
+const setPin = async (req, res) => {
+    try {
+        if (!req.session.userId) {
+            return res.status(401).json({ message: 'Authentication required' });
+        }
+
+        const { password, pin, currentPin } = req.body;
+
+        if (typeof pin !== 'string' || !/^\d{4}$/.test(pin)) {
+            return res.status(400).json({ message: 'The PIN must be exactly 4 digits' });
+        }
+        if (/^(\d)\1{3}$/.test(pin) || pin === '1234') {
+            return res.status(400).json({ message: 'Choose a PIN that is harder to guess' });
+        }
+
+        const [rows] = await db.execute(
+            `SELECT password_hash, pin_hash,
+                    (pin_locked_until IS NOT NULL AND pin_locked_until > NOW()) AS pin_locked
+             FROM users WHERE id = ? LIMIT 1`,
+            [req.session.userId]
+        );
+        const passwordMatch = rows.length > 0 && typeof password === 'string'
+            && await bcrypt.compare(password, rows[0].password_hash);
+        if (!passwordMatch) {
+            return res.status(403).json({ message: 'Your account password is incorrect' });
+        }
+
+        // Changing an existing PIN also needs the current PIN. Otherwise
+        // someone who had learned the password could simply replace the
+        // PIN, and it would protect nothing. A locked PIN cannot be changed.
+        if (rows[0].pin_hash) {
+            if (Number(rows[0].pin_locked)) {
+                return res.status(423).json({ message: 'The PIN is locked after too many wrong attempts. Try again in 15 minutes.' });
+            }
+            const currentMatch = typeof currentPin === 'string' && /^\d{4}$/.test(currentPin)
+                && await bcrypt.compare(currentPin, rows[0].pin_hash);
+            if (!currentMatch) {
+                return res.status(403).json({ message: 'Your current PIN is incorrect' });
+            }
+        }
+
+        const pinHash = await bcrypt.hash(pin, 10);
+        await db.execute(
+            'UPDATE users SET pin_hash = ?, pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = ?',
+            [pinHash, req.session.userId]
+        );
+
+        return res.status(200).json({ message: 'Transaction PIN saved' });
+
+    } catch (error) {
+        console.error('Set PIN error:', error.message);
+
+        return res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
 module.exports = {
     register,
     login,
     logout,
-    me
+    me,
+    setPin
 };

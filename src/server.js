@@ -12,16 +12,89 @@ const testRoutes = require('./routes/testRoutes');
 const walletRoutes = require('./routes/walletRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const servicesRoutes = require('./routes/servicesRoutes');
+const riskEngine = require('./services/riskEngine');
+const attackLab = require('./services/attackLab');
 
 const app = express();
+app.disable('x-powered-by');
+const PRODUCTION = process.env.NODE_ENV === 'production';
+
+// Behind a reverse proxy (Caddy in docker-compose.prod.yml) the client's
+// address and the HTTPS scheme arrive in forwarded headers.
+if (PRODUCTION) app.set('trust proxy', 1);
+
+// Security headers on every response.
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'same-origin');
+    res.setHeader('Content-Security-Policy',
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; frame-ancestors 'none'");
+    if (PRODUCTION) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+    next();
+});
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: '50kb' }));
+// A request with no JSON body still gets an empty object to read from.
+app.use((req, res, next) => { if (!req.body || typeof req.body !== 'object') req.body = {}; next(); });
 
+// The interface is served from this server, so no other origin needs
+// access. CORS_ORIGIN can list trusted origins if one is ever needed.
+const allowedOrigins = (process.env.CORS_ORIGIN || '').split(',').map(o => o.trim()).filter(Boolean);
 app.use(cors({
-    origin: true,
+    origin: allowedOrigins.length ? allowedOrigins : false,
     credentials: true
 }));
+
+// Limits failed sign-in attempts in a 15-minute window: 10 for each
+// address and email, and 40 for each address across all emails. A
+// successful sign-in clears the count for that email.
+const LOGIN_WINDOW = 15 * 60 * 1000;
+const loginAttempts = new Map();
+
+function recentAttempts(key, now) {
+    const recent = (loginAttempts.get(key) || []).filter(time => now - time < LOGIN_WINDOW);
+    if (recent.length) loginAttempts.set(key, recent);
+    else loginAttempts.delete(key);
+    return recent;
+}
+
+function noteAttempt(key, now) {
+    const recent = recentAttempts(key, now);
+    recent.push(now);
+    // Re-insert so the map stays ordered by last use; the oldest go first
+    // when it grows too large.
+    loginAttempts.delete(key);
+    loginAttempts.set(key, recent);
+    while (loginAttempts.size > 5000) loginAttempts.delete(loginAttempts.keys().next().value);
+}
+
+app.use('/api/auth/login', (req, res, next) => {
+    if (req.method !== 'POST') return next();
+    // The database compares email addresses without regard to case or
+    // accents, so the key is reduced the same way.
+    const email = typeof req.body.email === 'string'
+        ? req.body.email.trim().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        : '';
+    const emailKey = `${req.ip}|${email}`;
+    const addressKey = `${req.ip}|*`;
+    const now = Date.now();
+    if (recentAttempts(emailKey, now).length >= 10 || recentAttempts(addressKey, now).length >= 40) {
+        return res.status(429).json({ message: 'Too many sign-in attempts. Try again in 15 minutes.' });
+    }
+    noteAttempt(emailKey, now);
+    noteAttempt(addressKey, now);
+    res.on('finish', () => {
+        if (res.statusCode !== 200) return;
+        // Only failures count: take this attempt back off both counts.
+        loginAttempts.delete(emailKey);
+        const shared = loginAttempts.get(addressKey);
+        if (shared) shared.pop();
+    });
+    next();
+});
 
 // Serve frontend files from src/public
 app.use(express.static(path.join(__dirname, 'public')));
@@ -36,10 +109,13 @@ app.use(
         secret: process.env.SESSION_SECRET,
         resave: false,
         saveUninitialized: false,
+        // Signed out after two hours without activity.
+        rolling: true,
         cookie: {
             httpOnly: true,
             sameSite: 'lax',
-            secure: false
+            secure: PRODUCTION,
+            maxAge: 2 * 60 * 60 * 1000
         }
     })
 );
@@ -90,7 +166,12 @@ app.get('/api/status', async (req, res) => {
         // Left as unavailable: transfers still complete and are marked unscored.
     }
 
-    statusCache = { ...status, checked_at: new Date().toISOString() };
+    statusCache = {
+        ...status,
+        riskMode: riskEngine.mode(),
+        attackLab: attackLab.enabled(),
+        checked_at: new Date().toISOString(),
+    };
     statusCachedAt = Date.now();
     res.json(statusCache);
 });

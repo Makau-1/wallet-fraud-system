@@ -23,10 +23,16 @@
     </header>
 
     <main class="page">
+        <div class="mode-switch" role="tablist" aria-label="Admin sections">
+            <button type="button" role="tab" aria-selected="true" data-section="alerts">Fraud review</button>
+            <button type="button" role="tab" aria-selected="false" data-section="lab">Attack lab</button>
+        </div>
+
+        <div data-section-panel="alerts">
         <div class="page-head">
-            <span class="mono">Fraud operations</span>
+            <span class="mono">Fraud operations <span id="modeBadge" class="badge"></span></span>
             <h1 style="margin-top:10px">Fraud review</h1>
-            <p>Transfers and withdrawals the model scored at or above the alert threshold. The money has already moved; your decision records whether the transaction was fraud.</p>
+            <p id="reviewIntro">Payments whose risk score reached the alert threshold.</p>
         </div>
 
         <div class="stats">
@@ -44,6 +50,29 @@
 
         <p id="adminMessage" class="message" role="status" aria-live="polite"></p>
         <ul id="alertList" class="alerts" aria-live="polite"></ul>
+        </div>
+
+        <div data-section-panel="lab" hidden>
+            <div class="page-head">
+                <span class="mono">Red team <span id="labModeBadge" class="badge"></span></span>
+                <h1 style="margin-top:10px">Attack lab</h1>
+                <p>Runs scripted fraud scenarios through the real payment path and shows what the risk engine did with every step. Each run creates its own test accounts, so no real user is touched.</p>
+            </div>
+            <p id="labOff" class="notice" hidden>The attack lab is switched off. Add <code>ATTACK_LAB=1</code> to the <code>.env</code> file and restart the server to use it. Leave it off on any public deployment.</p>
+            <div id="labOn" hidden>
+                <ul id="scenarioList" class="scenarios"></ul>
+                <p id="labMessage" class="message" role="status" aria-live="polite"></p>
+                <section id="labResult" class="console" hidden>
+                    <div class="console-head"><span class="mono" id="labResultTitle"></span><span class="mono" id="labResultMode"></span></div>
+                    <div class="lab-summary" id="labSummary"></div>
+                    <ol id="labTrace" class="trace"></ol>
+                </section>
+                <div class="lab-foot">
+                    <span class="hint">Lab runs add alerts to the review queue. Removing lab data deletes the test accounts with their transactions and alerts.</span>
+                    <button type="button" class="quiet small" id="labCleanup">Remove lab data</button>
+                </div>
+            </div>
+        </div>
     </main>
     <script src="app.js"></script>
 </body>

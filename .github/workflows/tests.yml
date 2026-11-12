@@ -1,0 +1,105 @@
+# Runs the whole test suite on every push and pull request:
+# the model is trained from the committed data, the database is created
+# from schema.sql, both services are started, and all test cases run,
+# first in advisory mode and then in enforce mode.
+
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: wallet_fraud_db
+          MYSQL_USER: wallet
+          MYSQL_PASSWORD: ci-password
+          MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u wallet -pci-password --silent"
+          --health-interval=5s --health-timeout=3s --health-retries=30
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: wallet
+      DB_PASSWORD: ci-password
+      DB_NAME: wallet_fraud_db
+      SESSION_SECRET: ci-only-session-secret
+      ML_URL: http://127.0.0.1:8000
+      PORT: 3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ml/requirements-service.txt
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          pip install -r ml/requirements-service.txt
+
+      - name: Create the database tables
+        run: mysql -h 127.0.0.1 -u wallet -pci-password wallet_fraud_db < database/schema.sql
+
+      - name: Train the model
+        working-directory: ml
+        run: python train_model.py
+
+      - name: Check live features match the training features
+        working-directory: ml
+        run: python -m tests.test_features
+
+      - name: Start the scoring service
+        working-directory: ml
+        run: |
+          nohup python -m uvicorn ml.app:app --port 8000 > ../ml.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8000/health > /dev/null && exit 0; sleep 1; done
+          cat ../ml.log; exit 1
+
+      - name: Functional tests, advisory mode (TC-01 to TC-26)
+        run: |
+          nohup node src/server.js > web.log 2>&1 & echo $! > web.pid
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:3000/api > /dev/null && break; sleep 1; done
+          node tests/run-tests.js
+          kill "$(cat web.pid)"
+
+      - name: Risk engine tests, enforce mode (TC-27 to TC-38)
+        env:
+          RISK_MODE: enforce
+          ATTACK_LAB: "1"
+        run: |
+          nohup node src/server.js > web-enforce.log 2>&1 & echo $! > web.pid
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:3000/api > /dev/null && break; sleep 1; done
+          node tests/run-v2-tests.js
+          kill "$(cat web.pid)"
+
+      - name: Keep the results and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            tests/results/
+            *.log

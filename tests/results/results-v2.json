@@ -1,0 +1,126 @@
+{
+  "run": "2026-11-12 05:44:13",
+  "base": "http://localhost:3000",
+  "status": {
+    "wallet": "operational",
+    "database": "operational",
+    "scoring": "operational",
+    "riskMode": "enforce",
+    "attackLab": true,
+    "checked_at": "2026-11-12T05:44:01.069Z"
+  },
+  "results": [
+    {
+      "id": "TC-27",
+      "requirement": "FR-18",
+      "description": "Confirmation of payee before a transfer",
+      "expected": "Registered name returned for a real recipient; 404 for an unknown address; 401 when signed out",
+      "actual": "Known HTTP 200 \"payeeb Test\", paid before: false; unknown HTTP 404; signed out HTTP 401; after one payment, paid before: true",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-28",
+      "requirement": "FR-19",
+      "description": "Set a transaction PIN",
+      "expected": "Weak PIN and wrong password refused; valid PIN stored as a bcrypt hash; changing it needs the current PIN",
+      "actual": "Weak PIN HTTP 400; wrong password HTTP 403; valid HTTP 200; change without the current PIN HTTP 403, with it HTTP 200; account reports a PIN: true; bcrypt hash stored: true",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-29",
+      "requirement": "FR-20",
+      "description": "Risk assessment and explanation stored with a transaction",
+      "expected": "Model score, risk score, signals and feature contributions recorded; contributions add up to the model score",
+      "actual": "HTTP 200; model score 0.365; risk 0.46025; signals: new_recipient; 7 contributions; base value plus contributions = 0.3650",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-30",
+      "requirement": "FR-21",
+      "description": "Unusual payment is challenged for the PIN",
+      "expected": "HTTP 428 and no money moved without the PIN or with a wrong PIN; payment completes with the right PIN and no alert is raised",
+      "actual": "No PIN HTTP 428 (pin: First payment to this recipient; Money received in the last 15 minutes is being passed straight on; A similar amount came from this recipient in the last 24 hours); scores kept from the client: true; wrong PIN HTTP 403; balance unchanged: true; right PIN HTTP 200, recorded as verified; alert: none",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-31",
+      "requirement": "FR-21",
+      "description": "Unusual payment by a user with no PIN",
+      "expected": "HTTP 428 asking the user to set a PIN; no money moved",
+      "actual": "HTTP 428 (set_pin) \"This payment needs your transaction PIN. Set a PIN under Security, then try again.\"; balance unchanged: true",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-32",
+      "requirement": "FR-19",
+      "description": "Five wrong PIN attempts lock the PIN",
+      "expected": "Fifth wrong attempt locks the PIN; the right PIN is then refused with HTTP 423",
+      "actual": "Wrong attempts HTTP 403, 403, 403, 403, 403; right PIN afterwards HTTP 423 \"Too many wrong PIN attempts. Try again in 15 minutes.\"",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-33",
+      "requirement": "FR-22",
+      "description": "High-risk payment is held, then released by the analyst",
+      "expected": "Sender debited, recipient not credited and transaction pending; after the alert is cleared the recipient is credited",
+      "actual": "HTTP 200, held: true, risk 0.892610; transaction pending, alert type hold; while held sender 0, recipient 100, hidden from recipient: true; review HTTP 200 (released); transaction completed, recipient now 3100",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-34",
+      "requirement": "FR-22",
+      "description": "High-risk payment is held, then refunded when fraud is confirmed",
+      "expected": "After the alert is confirmed as fraud the money is back with the sender and the recipient received nothing",
+      "actual": "Held: true; review HTTP 200 (reversed); second decision HTTP 409; transaction failed; sender back to 3000; recipient 100",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-35",
+      "requirement": "NFR-03",
+      "description": "Signals still protect the wallet when the model score is low",
+      "expected": "A burst of small payments to one recipient is challenged although the model alone scores each below the threshold",
+      "actual": "Payments HTTP 200, 200, 200, 428; highest model score among those sent 0.176667; fourth stopped for: 3 payments out in the last 10 minutes; 3 payments to this recipient in the last 10 minutes",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-36",
+      "requirement": "FR-23",
+      "description": "Attack lab scenarios",
+      "expected": "Every attack step expected to be caught is caught; ordinary behaviour raises no false alarm; a non-administrator is refused",
+      "actual": "Non-admin HTTP 403; normal: 0 false alarms in 3; takeover: 1 of 1 caught (model alone 1); velocity: 4 of 4 caught (model alone 0); mule_chain: 2 of 2 caught (model alone 0); fan_in: 2 of 2 caught (model alone 1); round_trip: 2 of 2 caught (model alone 1); cleanup removed 20 accounts, 0 left",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-37",
+      "requirement": "NFR-02",
+      "description": "Security headers and sign-in rate limit",
+      "expected": "Security headers on responses; the eleventh failed sign-in in 15 minutes is refused with HTTP 429",
+      "actual": "Headers present: content-security-policy, x-content-type-options, x-frame-options; first ten attempts HTTP 401; eleventh HTTP 429",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-38",
+      "requirement": "NFR-02",
+      "description": "Held payment cannot be settled twice or by a non-administrator",
+      "expected": "A user cannot review an alert; a reviewed hold does not move money again",
+      "actual": "User review HTTP 403, still held: true; second release HTTP 409; recipient credited once: 3100",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-39",
+      "requirement": "NFR-02",
+      "description": "Parallel requests cannot get round the checks",
+      "expected": "Of eight identical transfers sent at once, no more than three go through before the PIN is asked for; eight wrong PINs sent at once lock the PIN",
+      "actual": "Eight at once: 3 sent, 5 asked for the PIN, 900 moved; after eight wrong PINs at once the right PIN gets HTTP 423",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-40",
+      "requirement": "FR-22",
+      "description": "Held payment of a money request",
+      "expected": "The request stays open while the payment is held and is marked paid when the payment is released",
+      "actual": "Held: true; request while held: pending; after release: paid",
+      "status": "Pass"
+    }
+  ]
+}

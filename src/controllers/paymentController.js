@@ -8,7 +8,7 @@
 // they are recorded without a score.
 
 const db = require('../config/db');
-const { scoreAndRecordTransaction } = require('../services/fraudService');
+const payments = require('../services/payments');
 const {
     ServiceError, checkAmount, withTransaction,
     walletForUser, debit, handle,
@@ -25,42 +25,25 @@ function mask(accountNumber) {
 
 const banks = (req, res) => res.json({ banks: BANKS });
 
-const bankTransfer = handle('PaymentController', async (req, res) => {
-    const wallet = await walletForUser(req.session.userId);
-    const amount = checkAmount(req.body.amount);
+const bankTransfer = async (req, res) => {
     const bank = req.body.bank;
     const accountNumber = typeof req.body.accountNumber === 'string' ? req.body.accountNumber.replace(/\s+/g, '') : '';
 
-    if (!BANKS.includes(bank)) throw new ServiceError(400, 'Choose a bank from the list');
-    if (!/^\d{6,16}$/.test(accountNumber)) throw new ServiceError(400, 'Enter an account number of 6 to 16 digits');
-
-    const moved = await withTransaction(connection => debit(connection, wallet.id, amount, {
-        type: 'bank_transfer',
-        bank,
-        account_masked: mask(accountNumber),
-    }));
-
-    // Scored after commit, as for withdrawals. If the model is unavailable
-    // the transfer still completes and is marked unscored.
-    try {
-        await scoreAndRecordTransaction(db, moved.transactionId, {
-            type: 'CASH_OUT',
-            amount,
-            oldbalanceOrg: moved.before,
-            newbalanceOrig: moved.after,
-            oldbalanceDest: 0,
-            newbalanceDest: 0,
-        });
-    } catch (error) {
-        console.error('[PaymentController] Bank transfer scoring failed:', error.message);
+    if (!BANKS.includes(bank)) return res.status(400).json({ message: 'Choose a bank from the list' });
+    if (!/^\d{6,16}$/.test(accountNumber)) {
+        return res.status(400).json({ message: 'Enter an account number of 6 to 16 digits' });
     }
 
-    res.json({
-        message: 'Bank transfer sent',
-        transactionId: moved.transactionId,
-        balance: moved.after,
-    });
-});
+    // Scored as a cash-out by the shared payment service, which also
+    // applies the PIN challenge or hold in enforce mode.
+    return payments.respond(res, () => payments.execute({
+        userId: req.session.userId,
+        kind: 'bank_transfer',
+        amount: req.body.amount,
+        pin: req.body.pin,
+        details: { bank, account_masked: mask(accountNumber) },
+    }));
+};
 
 const KINDS = {
     paybill: { label: 'Pay bill', number: /^\d{5,7}$/, numberHint: 'a business number of 5 to 7 digits', needsAccount: true, max: 1000000 },

@@ -1,11 +1,13 @@
 {
   "name": "wallet-fraud-system",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node tests/run-tests.js",
+    "test:v2": "node tests/run-v2-tests.js"
   },
   "keywords": [],
   "author": "",

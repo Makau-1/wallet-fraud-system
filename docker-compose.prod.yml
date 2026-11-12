@@ -1,0 +1,35 @@
+# Production additions: HTTPS through Caddy, which obtains and renews a
+# certificate from Let's Encrypt automatically.
+#
+# On the server, with DOMAIN set in .env (for example
+# DOMAIN=wallet.example.com) and that name pointing at the server:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# See docs/DEPLOYMENT.md for the full steps.
+
+services:
+  web:
+    environment:
+      NODE_ENV: production
+      RISK_MODE: enforce
+      ATTACK_LAB: "0"
+
+  caddy:
+    image: caddy:2
+    depends_on:
+      - web
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in the .env file}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

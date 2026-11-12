@@ -1,4 +1,6 @@
 const db = require('../config/db');
+const { withTransaction } = require('../services/ledger');
+const payments = require('../services/payments');
 
 const ALERT_STATUSES = ['pending', 'confirmed_fraud', 'cleared'];
 const REVIEW_DECISIONS = ['confirmed_fraud', 'cleared'];
@@ -32,6 +34,7 @@ const getFraudAlerts = async (req, res) => {
                 t.amount,
                 t.currency,
                 t.metadata,
+                t.status AS transaction_status,
                 t.created_at AS transaction_time,
                 sender.email AS sender_email,
                 sender.name AS sender_name,
@@ -105,17 +108,35 @@ const updateFraudAlertStatus = async (req, res) => {
             });
         }
 
-        const [result] = await db.execute(
-            `UPDATE fraud_alerts
-             SET status = ?,
-                 notes = COALESCE(?, notes),
-                 reviewed_by = ?,
-                 reviewed_at = CURRENT_TIMESTAMP,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?
-               AND status = 'pending'`,
-            [status, notes ?? null, req.session.userId, alertId]
-        );
+        // The decision and, for a held payment, the movement of the held
+        // money are made in one database transaction: clearing the alert
+        // releases the payment to the recipient, and confirming fraud
+        // returns the money to the sender.
+        let settlement = null;
+        const result = await withTransaction(async (connection) => {
+            const [updated] = await connection.execute(
+                `UPDATE fraud_alerts
+                 SET status = ?,
+                     notes = COALESCE(?, notes),
+                     reviewed_by = ?,
+                     reviewed_at = CURRENT_TIMESTAMP,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?
+                   AND status = 'pending'`,
+                [status, notes ?? null, req.session.userId, alertId]
+            );
+            if (updated.affectedRows > 0) {
+                const [alertRows] = await connection.execute(
+                    'SELECT transaction_id FROM fraud_alerts WHERE id = ?', [alertId]
+                );
+                settlement = await payments.settleHeld(
+                    connection,
+                    alertRows[0].transaction_id,
+                    status === 'cleared' ? 'release' : 'reverse'
+                );
+            }
+            return updated;
+        });
 
         if (result.affectedRows === 0) {
             const [existing] = await db.execute(
@@ -137,7 +158,8 @@ const updateFraudAlertStatus = async (req, res) => {
         return res.status(200).json({
             message: 'Fraud alert status updated successfully',
             alertId,
-            status
+            status,
+            settlement
         });
     } catch (error) {
         console.error('Update fraud alert error:', error.message);

@@ -690,7 +690,7 @@ button.small { padding: 6px 12px; font-size: 13px; }
     body[data-page=dashboard] { padding-bottom: 72px; }
     .bottom-nav {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(5, 1fr);
         position: fixed;
         left: 0; right: 0; bottom: 0;
         z-index: 6;
@@ -866,6 +866,112 @@ p.fine.mono { font-size: 10.5px; }
     .page { padding: 24px 16px 48px; }
     .brand-divider, .brand-product { display: none; }
     .who span { display: none; }
+}
+
+/* ------------------------------------------------------------------
+   Version 2: payee check, PIN step, security view, holds
+------------------------------------------------------------------- */
+
+.payee {
+    display: grid;
+    gap: 2px;
+    margin-top: 12px;
+    padding: 12px 14px;
+    border: 1px solid rgba(63, 191, 143, 0.4);
+    background: rgba(63, 191, 143, 0.07);
+    border-radius: var(--radius-sm);
+    font-size: 13.5px;
+    color: var(--muted);
+}
+.payee strong { font-size: 16px; color: var(--text); }
+.payee.new { border-color: rgba(242, 167, 26, 0.45); background: rgba(242, 167, 26, 0.07); }
+
+.pin-step .hint { margin: 6px 0 0; }
+.reasons { list-style: none; margin: 14px 0 6px; padding: 12px 14px; display: grid; gap: 7px; font-size: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.reasons li { display: flex; align-items: baseline; gap: 2px; }
+.reasons .dot { flex: none; }
+.pin-input { font-family: 'JetBrains Mono', monospace; font-size: 22px; letter-spacing: 0.5em; text-align: center; }
+
+.tiers { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.tiers li { display: flex; gap: 10px; align-items: baseline; font-size: 14px; }
+.tiers .dot { flex: none; }
+.tiers strong { display: block; }
+.tiers span:not(.dot) { color: var(--muted); }
+
+.tx-amount.refunded { text-decoration: line-through; color: var(--muted); }
+
+.badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    vertical-align: middle;
+}
+.badge:empty { display: none; }
+.badge.hold { color: var(--amber); border-color: rgba(242, 167, 26, 0.5); background: rgba(242, 167, 26, 0.08); }
+
+/* ------------------------------------------------------------------
+   Version 2: risk explanation on an alert
+------------------------------------------------------------------- */
+
+.explain { border-color: rgba(242, 167, 26, 0.3); }
+.explain .risk-sum { margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+.explain .risk-sum strong { color: var(--text); font-family: 'JetBrains Mono', monospace; }
+.explain li { justify-content: space-between; gap: 12px; }
+.explain .weight { color: var(--faint); white-space: nowrap; }
+.explain .sub { display: block; margin-top: 16px; }
+.contrib { display: grid; gap: 7px; margin-top: 10px; }
+.contrib-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(60px, 1fr) 48px; gap: 10px; align-items: center; font-size: 13.5px; }
+.contrib-name { overflow-wrap: anywhere; }
+.contrib-track { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.contrib-track i { display: block; height: 100%; border-radius: 4px; }
+.contrib-track i.up { background: var(--orange); }
+.contrib-track i.down { background: var(--safe); }
+.contrib-num { text-align: right; color: var(--muted); }
+.signals + .signals { margin-top: 10px; }
+
+/* ------------------------------------------------------------------
+   Version 2: admin sections and the attack lab
+------------------------------------------------------------------- */
+
+.mode-switch { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 24px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.mode-switch button { background: transparent; border: 0; color: var(--muted); padding: 8px 18px; border-radius: 999px; font-weight: 600; font-size: 14px; }
+.mode-switch button:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.mode-switch button[aria-selected=true] { background: var(--amber); color: #201e1f; }
+
+.scenarios { list-style: none; margin: 0 0 18px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.scenario { display: flex; flex-direction: column; gap: 8px; }
+.scenario h3 { font-size: 17px; margin: 0; }
+.scenario p { margin: 0; font-size: 13.5px; color: var(--muted); flex: 1; }
+.scenario button { align-self: flex-start; margin-top: 6px; }
+
+.lab-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.lab-stat { padding: 14px 16px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.lab-stat strong { display: block; margin-top: 6px; font-size: 20px; }
+.lab-stat.good strong { color: var(--safe); }
+.lab-stat.poor strong { color: var(--red); }
+
+.trace { list-style: none; margin: 0; padding: 0; counter-reset: step; display: grid; gap: 10px; }
+.trace-step { counter-increment: step; position: relative; padding: 12px 14px 12px 46px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.trace-step::before { content: counter(step); position: absolute; left: 14px; top: 12px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); }
+.trace-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.trace-what { margin-top: 4px; font-size: 14px; color: var(--muted); }
+.trace-why { margin-top: 6px; font-size: 13px; color: var(--text); }
+.trace-miss { margin-top: 6px; font-size: 13px; color: var(--red); font-weight: 600; }
+.lab-foot { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 18px; flex-wrap: wrap; }
+.lab-foot .hint { margin: 0; max-width: 60ch; }
+code { font-family: 'JetBrains Mono', monospace; font-size: 0.92em; padding: 1px 6px; background: var(--surface-2); border-radius: 4px; }
+
+@media (max-width: 860px) {
+    .scenarios { grid-template-columns: 1fr; }
+    .contrib-row { grid-template-columns: 1fr 48px; }
+    .contrib-track { grid-column: 1 / -1; order: 3; }
 }
 
 /* ------------------------------------------------------------------

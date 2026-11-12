@@ -14,4 +14,6 @@ router.post('/transfer', authMiddleware, walletController.transfer);
 
 router.get('/history', authMiddleware, walletController.getHistory);
 
+router.get('/recipient', authMiddleware, walletController.lookupRecipient);
+
 module.exports = router;

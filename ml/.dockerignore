@@ -1,0 +1,8 @@
+venv
+.venv*
+__pycache__
+*.pkl
+*.ipynb
+.ipynb_checkpoints
+data/X_*.csv
+data/y_*.csv

@@ -2,10 +2,8 @@ const walletModel = require('../models/walletModel');
 const userModel = require('../models/userModel');
 const db = require('../config/db');
 
-const {
-    scoreAndRecordTransaction,
-} = require('../services/fraudService');
 const { amountError } = require('../services/ledger');
+const payments = require('../services/payments');
 
 
 // ==================================================
@@ -144,406 +142,73 @@ async function deposit(req, res) {
 
 
 // ==================================================
-// WITHDRAWAL
-// Withdrawals are scored as CASH_OUT.
+// WITHDRAWAL AND TRANSFER
+// Both go through the shared payment service, which assesses
+// the risk, applies the PIN challenge or hold in enforce mode,
+// and moves the money in one database transaction.
+// Withdrawals are scored as CASH_OUT, transfers as TRANSFER.
 // ==================================================
 
 async function withdraw(req, res) {
-    let connection = null;
-    let transactionStarted = false;
-
-    console.log('[WalletController] Withdrawal handler reached');
-
-    try {
-        const userId = req.session.userId;
-        const { amount } = req.body;
-
-        if (!userId) {
-            return res.status(401).json({
-                message: 'Authentication required',
-            });
-        }
-
-        // Positive, at most two decimal places, and within the system limit.
-        const amountProblem = amountError(amount);
-        if (amountProblem) {
-            return res.status(400).json({
-                message: amountProblem,
-            });
-        }
-
-        const wallet = await walletModel.getWalletByUserId(userId);
-
-        if (!wallet) {
-            return res.status(404).json({
-                message: 'Wallet not found',
-            });
-        }
-
-        connection = await db.getConnection();
-
-        await connection.beginTransaction();
-        transactionStarted = true;
-
-        // Lock the wallet before reading its latest balance.
-        const [rows] = await connection.execute(
-            `SELECT id, balance
-             FROM wallets
-             WHERE id = ?
-             FOR UPDATE`,
-            [wallet.id]
-        );
-
-        if (rows.length === 0) {
-            await connection.rollback();
-            transactionStarted = false;
-
-            return res.status(404).json({
-                message: 'Wallet not found',
-            });
-        }
-
-        const senderBefore = Number(rows[0].balance);
-
-        if (amount > senderBefore) {
-            await connection.rollback();
-            transactionStarted = false;
-
-            return res.status(400).json({
-                message: 'Insufficient funds',
-            });
-        }
-
-        const senderAfter = senderBefore - amount;
-
-        await connection.execute(
-            `UPDATE wallets
-             SET balance = balance - ?
-             WHERE id = ?`,
-            [amount, wallet.id]
-        );
-
-        const [result] = await connection.execute(
-            `INSERT INTO transactions
-                (amount, receiver_wallet_id, sender_wallet_id,
-                 status, metadata)
-             VALUES (?, NULL, ?, 'completed', ?)`,
-            [
-                amount,
-                wallet.id,
-                JSON.stringify({
-                    type: 'withdrawal',
-                    sender_balance_before: senderBefore,
-                    sender_balance_after: senderAfter,
-                }),
-            ]
-        );
-
-        const transactionId = result.insertId;
-
-        // Commit the withdrawal before fraud scoring.
-        await connection.commit();
-        transactionStarted = false;
-
-        console.log(
-            '[WalletController] Withdrawal committed. Transaction ID:',
-            transactionId
-        );
-
-        // Release the wallet transaction's connection before scoring.
-        connection.release();
-        connection = null;
-
-        try {
-            console.log(
-                '[WalletController] Starting withdrawal fraud scoring:',
-                transactionId
-            );
-
-            const scoringResult = await scoreAndRecordTransaction(
-                db,
-                transactionId,
-                {
-                    type: 'CASH_OUT',
-                    amount,
-                    oldbalanceOrg: senderBefore,
-                    newbalanceOrig: senderAfter,
-                    oldbalanceDest: 0,
-                    newbalanceDest: 0,
-                }
-            );
-
-            console.log(
-                '[WalletController] Withdrawal scoring finished:',
-                transactionId,
-                scoringResult ? 'scored' : 'unscored'
-            );
-        } catch (scoringError) {
-            console.error(
-                '[WalletController] Withdrawal scoring failed:',
-                scoringError
-            );
-        }
-
-        return res.status(200).json({
-            message: 'Withdrawal successful',
-            transactionId,
-            balance: senderAfter,
-        });
-    } catch (error) {
-        if (connection && transactionStarted) {
-            try {
-                await connection.rollback();
-            } catch (rollbackError) {
-                console.error(
-                    '[WalletController] Withdrawal rollback error:',
-                    rollbackError
-                );
-            }
-        }
-
-        console.error('[WalletController] Withdrawal error:', error);
-
-        return res.status(500).json({
-            message: 'Withdrawal failed',
-        });
-    } finally {
-        if (connection) {
-            connection.release();
-        }
+    if (!req.session.userId) {
+        return res.status(401).json({ message: 'Authentication required' });
     }
+    return payments.respond(res, () => payments.execute({
+        userId: req.session.userId,
+        kind: 'withdrawal',
+        amount: req.body.amount,
+        pin: req.body.pin,
+    }));
 }
 
-
-// ==================================================
-// TRANSFER
-// Transfers are scored as TRANSFER.
-// ==================================================
-
 async function transfer(req, res) {
-    let connection = null;
-    let transactionStarted = false;
+    if (!req.session.userId) {
+        return res.status(401).json({ message: 'Authentication required' });
+    }
+    return payments.respond(res, () => payments.execute({
+        userId: req.session.userId,
+        kind: 'transfer',
+        amount: req.body.amount,
+        recipientEmail: req.body.recipientEmail,
+        pin: req.body.pin,
+        // Set when the transfer pays a money request, so that if the
+        // transfer is held the request is settled when it is released.
+        details: Number.isInteger(req.body.requestId) && req.body.requestId > 0
+            ? { request_id: req.body.requestId } : {},
+    }));
+}
 
-    console.log('[WalletController] Transfer handler reached');
-
+// Confirmation of payee: the name registered to an email address, shown
+// before a transfer is confirmed so the sender can check it is the right
+// person. Only signed-in users can look up a name.
+async function lookupRecipient(req, res) {
     try {
-        const senderId = req.session.userId;
-        const { recipientEmail, amount } = req.body;
-
-        if (!senderId) {
-            return res.status(401).json({
-                message: 'Authentication required',
-            });
+        const email = typeof req.query.email === 'string' ? req.query.email.trim() : '';
+        if (!email) {
+            return res.status(400).json({ message: 'Email is required' });
         }
-
-        if (
-            typeof recipientEmail !== 'string' ||
-            !recipientEmail.trim()
-        ) {
-            return res.status(400).json({
-                message: 'Recipient email is required',
-            });
+        const recipient = await userModel.findUserByEmail(email);
+        if (!recipient || String(recipient.id) === String(req.session.userId)) {
+            return res.status(404).json({ message: 'Recipient not found' });
         }
-
-        // Positive, at most two decimal places, and within the system limit.
-        const amountProblem = amountError(amount);
-        if (amountProblem) {
-            return res.status(400).json({
-                message: amountProblem,
-            });
-        }
-
-        const recipient = await userModel.findUserByEmail(
-            recipientEmail.trim()
+        // Whether the sender has paid this person before, so the review
+        // step can point out a first payment.
+        const [paid] = await db.execute(
+            `SELECT COUNT(*) AS n
+             FROM transactions t
+             JOIN wallets sw ON sw.id = t.sender_wallet_id
+             JOIN wallets rw ON rw.id = t.receiver_wallet_id
+             WHERE sw.user_id = ? AND rw.user_id = ? AND t.status = 'completed'`,
+            [req.session.userId, recipient.id]
         );
-
-        if (!recipient) {
-            return res.status(404).json({
-                message: 'Recipient not found',
-            });
-        }
-
-        if (String(recipient.id) === String(senderId)) {
-            return res.status(400).json({
-                message: 'You cannot transfer money to yourself',
-            });
-        }
-
-        const senderWallet =
-            await walletModel.getWalletByUserId(senderId);
-
-        if (!senderWallet) {
-            return res.status(404).json({
-                message: 'Sender wallet not found',
-            });
-        }
-
-        const recipientWallet =
-            await walletModel.getWalletByUserId(recipient.id);
-
-        if (!recipientWallet) {
-            return res.status(404).json({
-                message: 'Recipient wallet not found',
-            });
-        }
-
-        connection = await db.getConnection();
-
-        await connection.beginTransaction();
-        transactionStarted = true;
-
-        // Lock both wallet rows in a consistent order.
-        const [lockedRows] = await connection.execute(
-            `SELECT id, balance
-             FROM wallets
-             WHERE id IN (?, ?)
-             ORDER BY id
-             FOR UPDATE`,
-            [
-                senderWallet.id,
-                recipientWallet.id,
-            ]
-        );
-
-        const senderRow = lockedRows.find(
-            row => String(row.id) === String(senderWallet.id)
-        );
-
-        const recipientRow = lockedRows.find(
-            row => String(row.id) === String(recipientWallet.id)
-        );
-
-        if (!senderRow || !recipientRow) {
-            await connection.rollback();
-            transactionStarted = false;
-
-            return res.status(404).json({
-                message: 'Sender or recipient wallet not found',
-            });
-        }
-
-        const senderBefore = Number(senderRow.balance);
-        const receiverBefore = Number(recipientRow.balance);
-
-        if (amount > senderBefore) {
-            await connection.rollback();
-            transactionStarted = false;
-
-            return res.status(400).json({
-                message: 'Insufficient funds',
-            });
-        }
-
-        const senderAfter = senderBefore - amount;
-        const receiverAfter = receiverBefore + amount;
-
-        await connection.execute(
-            `UPDATE wallets
-             SET balance = balance - ?
-             WHERE id = ?`,
-            [amount, senderWallet.id]
-        );
-
-        await connection.execute(
-            `UPDATE wallets
-             SET balance = balance + ?
-             WHERE id = ?`,
-            [amount, recipientWallet.id]
-        );
-
-        const [result] = await connection.execute(
-            `INSERT INTO transactions
-                (amount, sender_wallet_id, receiver_wallet_id,
-                 status, metadata)
-             VALUES (?, ?, ?, 'completed', ?)`,
-            [
-                amount,
-                senderWallet.id,
-                recipientWallet.id,
-                JSON.stringify({
-                    type: 'transfer',
-                    sender_balance_before: senderBefore,
-                    sender_balance_after: senderAfter,
-                    receiver_balance_before: receiverBefore,
-                    receiver_balance_after: receiverAfter,
-                }),
-            ]
-        );
-
-        const transactionId = result.insertId;
-
-        // Commit the transfer before calling the ML service.
-        await connection.commit();
-        transactionStarted = false;
-
-        console.log(
-            '[WalletController] Transfer committed. Transaction ID:',
-            transactionId
-        );
-
-        // Release this connection so the scoring service can
-        // use a separate connection from the pool.
-        connection.release();
-        connection = null;
-
-        try {
-            console.log(
-                '[WalletController] Starting transfer fraud scoring:',
-                transactionId
-            );
-
-            const scoringResult = await scoreAndRecordTransaction(
-                db,
-                transactionId,
-                {
-                    type: 'TRANSFER',
-                    amount,
-                    oldbalanceOrg: senderBefore,
-                    newbalanceOrig: senderAfter,
-                    oldbalanceDest: receiverBefore,
-                    newbalanceDest: receiverAfter,
-                }
-            );
-
-            console.log(
-                '[WalletController] Transfer scoring finished:',
-                transactionId,
-                scoringResult ? 'scored' : 'unscored'
-            );
-        } catch (scoringError) {
-            console.error(
-                '[WalletController] Transfer scoring failed:',
-                scoringError
-            );
-        }
-
         return res.status(200).json({
-            message: 'Transfer successful',
-            transactionId,
-            recipient: recipient.email,
-            balance: senderAfter,
+            name: recipient.name,
+            email: recipient.email,
+            paidBefore: Number(paid[0].n) > 0,
         });
     } catch (error) {
-        if (connection && transactionStarted) {
-            try {
-                await connection.rollback();
-            } catch (rollbackError) {
-                console.error(
-                    '[WalletController] Transfer rollback error:',
-                    rollbackError
-                );
-            }
-        }
-
-        console.error('[WalletController] Transfer error:', error);
-
-        return res.status(500).json({
-            message: 'Transfer failed',
-        });
-    } finally {
-        if (connection) {
-            connection.release();
-        }
+        console.error('[WalletController] Recipient lookup error:', error);
+        return res.status(500).json({ message: 'Could not look up the recipient' });
     }
 }
 
@@ -628,6 +293,11 @@ async function getHistory(req, res) {
                 .forEach(key => { if (meta && meta[key] !== undefined) details[key] = meta[key]; });
             if (Object.keys(details).length) item.details = details;
 
+            // What the risk engine did with this payment, for the sender only.
+            if (tx.direction === 'out' && meta && meta.risk && meta.risk.action) {
+                item.risk_action = meta.risk.action;
+            }
+
             if (tx.direction === 'out' && scoredTypes.includes(item.type)) {
                 item.fraud_check = {
                     scoring_status: tx.scoring_status,
@@ -668,5 +338,6 @@ module.exports = {
     deposit,
     withdraw,
     transfer,
+    lookupRecipient,
     getHistory,
 };

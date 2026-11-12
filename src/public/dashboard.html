@@ -21,6 +21,7 @@
             <a href="#savings" data-view="savings">Savings</a>
             <a href="#loans" data-view="loans">Loans</a>
             <a href="#requests" data-view="requests">Requests <span class="count" id="navRequestCount" hidden>0</span></a>
+            <a href="#security" data-view="security">Security</a>
         </nav>
         <div class="who">
             <span id="userName"></span>
@@ -113,6 +114,7 @@
                     <div id="reviewPanel" class="review" hidden>
                         <span class="mono">Review before you confirm</span>
                         <h3 id="reviewTitle" style="margin-top:10px"></h3>
+                        <div id="payeeNote" class="payee" hidden></div>
                         <dl id="reviewRows"></dl>
                         <div id="reviewNotice" class="notice" hidden></div>
                         <div class="actions">
@@ -120,6 +122,22 @@
                             <button id="reviewConfirm" type="button" aria-describedby="reviewNotice">Confirm</button>
                         </div>
                     </div>
+
+                    <div id="pinStep" class="review pin-step" hidden><form id="pinForm" novalidate>
+                        <span class="mono">One more check</span>
+                        <h3 id="pinTitle" style="margin-top:10px">Confirm with your PIN</h3>
+                        <p class="hint">This payment looks unusual for your account, so we need to know it is you. Nothing has been sent yet.</p>
+                        <ul id="pinReasons" class="reasons"></ul>
+                        <div>
+                            <label for="pinInput">Transaction PIN</label>
+                            <input id="pinInput" class="pin-input" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••">
+                        </div>
+                        <p id="pinMessage" class="message" role="status" aria-live="polite"></p>
+                        <div class="actions">
+                            <button id="pinCancel" class="quiet" type="button">Cancel payment</button>
+                            <button type="submit">Confirm payment</button>
+                        </div>
+                    </form></div>
                 </section>
             </div>
 
@@ -266,6 +284,48 @@
                 </div>
             </div>
         </section>
+
+        <!-- ============================ SECURITY ============================ -->
+        <section data-view-panel="security" hidden>
+            <div class="page-head">
+                <span class="mono">Account protection</span>
+                <h2 class="view-title">Security</h2>
+                <p>Your transaction PIN is a second check, separate from your password. When a payment looks unusual for your account, SecureWallet asks for the PIN before sending it, so someone who has got into your account without knowing the PIN cannot empty it.</p>
+            </div>
+            <div class="dashboard">
+                <form class="console" id="pinSetForm" novalidate>
+                    <div class="console-head"><span class="mono" id="pinSetTitle">Set your PIN</span><span class="mono" id="pinState"></span></div>
+                    <label for="pinPassword">Account password</label>
+                    <input id="pinPassword" type="password" autocomplete="current-password">
+                    <div id="pinCurrentField" hidden>
+                        <label for="pinCurrent">Current PIN</label>
+                        <input id="pinCurrent" class="pin-input" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••">
+                    </div>
+                    <label for="pinNew">New 4-digit PIN</label>
+                    <input id="pinNew" class="pin-input" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••">
+                    <label for="pinRepeat">Repeat the PIN</label>
+                    <input id="pinRepeat" class="pin-input" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••">
+                    <p class="hint">Avoid easy PINs such as 1234 or four of the same digit. Five wrong attempts lock the PIN for 15 minutes. If you forget your PIN it cannot be reset from here.</p>
+                    <button type="submit" class="full" id="pinSetButton">Set PIN</button>
+                    <p id="pinSetMessage" class="message" role="status" aria-live="polite"></p>
+                </form>
+                <div class="stack">
+                    <section class="console">
+                        <div class="console-head"><span class="mono">How payments are protected</span><span class="mono" id="protectMode"></span></div>
+                        <p id="protectText" style="margin:0 0 14px"></p>
+                        <ul class="tiers">
+                            <li><span class="dot safe"></span><div><strong>Low risk</strong><span>The payment is sent straight away.</span></div></li>
+                            <li><span class="dot warn"></span><div><strong>Unusual</strong><span>You confirm with your PIN, then it is sent.</span></div></li>
+                            <li><span class="dot bad"></span><div><strong>High risk</strong><span>The money leaves your balance but is held. An analyst releases it or returns it to you.</span></div></li>
+                        </ul>
+                    </section>
+                    <section class="console">
+                        <div class="console-head"><span class="mono">What is checked</span></div>
+                        <p style="margin:0" class="hint">Each transfer, withdrawal and bank transfer is scored by the fraud model and compared with your own history: how often you are paying, how the amount compares with your usual payments, whether you have paid this person before, and whether the money is being passed quickly between accounts.</p>
+                    </section>
+                </div>
+            </div>
+        </section>
     </main>
 
     <nav class="bottom-nav" aria-label="Wallet sections">
@@ -273,6 +333,7 @@
         <a href="#savings" data-view="savings"><span class="action-icon" data-icon="savings"></span>Savings</a>
         <a href="#loans" data-view="loans"><span class="action-icon" data-icon="loan"></span>Loans</a>
         <a href="#requests" data-view="requests"><span class="action-icon" data-icon="request"></span>Requests</a>
+        <a href="#security" data-view="security"><span class="action-icon" data-icon="shield"></span>Security</a>
     </nav>
 
     <dialog id="receipt" aria-labelledby="receiptTitle">

@@ -1,0 +1,64 @@
+# SecureWallet: the database, the fraud scoring service and the website,
+# started together with one command:
+#
+#     docker compose up --build
+#
+# then open http://localhost:3000.
+#
+# Docker Compose reads DB_PASSWORD and SESSION_SECRET from the .env file in
+# this folder. The other settings are fixed here because inside Docker the
+# services reach each other by name (db, ml), not by localhost.
+
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: wallet_fraud_db
+      MYSQL_USER: wallet
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the .env file}
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    volumes:
+      - db_data:/var/lib/mysql
+      # Creates the tables the first time the database starts.
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      # Migration files and small helper scripts (see docs/DEPLOYMENT.md).
+      - ./database/migrations:/migrations:ro
+      - ./deploy/db:/dbtools:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  ml:
+    build: ./ml
+    restart: unless-stopped
+
+  web:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+      ml:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: wallet
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the .env file}
+      DB_NAME: wallet_fraud_db
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in the .env file}
+      ML_URL: http://ml:8000
+      RISK_MODE: ${RISK_MODE:-advisory}
+      ATTACK_LAB: ${ATTACK_LAB:-0}
+    ports:
+      # Reachable from this computer only. In production Caddy sits in
+      # front (docker-compose.prod.yml).
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+
+volumes:
+  db_data:

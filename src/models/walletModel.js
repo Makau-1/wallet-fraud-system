@@ -64,7 +64,8 @@ async function getTransactionsByWalletId(walletId, limit, offset) {
         LEFT JOIN wallets rw ON rw.id = t.receiver_wallet_id
         LEFT JOIN users receiver ON receiver.id = rw.user_id
         LEFT JOIN fraud_alerts fa ON fa.transaction_id = t.id
-        WHERE t.sender_wallet_id = ? OR t.receiver_wallet_id = ?
+        WHERE t.sender_wallet_id = ?
+           OR (t.receiver_wallet_id = ? AND t.status = 'completed')
         ORDER BY t.created_at DESC, t.id DESC
         LIMIT ? OFFSET ?
     `;
@@ -80,7 +81,8 @@ async function getTransactionsByWalletId(walletId, limit, offset) {
     const countSql = `
         SELECT COUNT(*) as total
         FROM transactions
-        WHERE sender_wallet_id = ? OR receiver_wallet_id = ?
+        WHERE sender_wallet_id = ?
+           OR (receiver_wallet_id = ? AND status = 'completed')
     `;
 
     const [countRows] = await pool.execute(countSql, [walletId, walletId]);

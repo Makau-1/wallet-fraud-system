@@ -22,6 +22,7 @@ async function api(path, options = {}) {
     if (!response.ok) {
         const error = new Error(data.message || `Request failed (${response.status})`);
         error.status = response.status;
+        error.data = data;
         throw error;
     }
 
@@ -159,6 +160,7 @@ const ICONS = {
     loan: 'M12 3v18M16 7.5c0-1.6-1.8-2.8-4-2.8s-4 1.2-4 2.8 1.8 2.5 4 2.9 4 1.3 4 3-1.8 2.8-4 2.8-4-1.2-4-2.8',
     home: 'M4 11 12 4l8 7v9h-5v-6H9v6H4z',
     shield: 'M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6zM9 12l2 2 4-4',
+    lab: 'M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3M7.5 15h9',
     statement: 'M5 4h14v16H5zM8 8h8M8 12h8M8 16h5',
 };
 
@@ -341,8 +343,10 @@ if (document.body.dataset.page === 'dashboard') {
             title: 'Send money', fields: ['recipientEmail'], review: 'scored',
             hint: 'Sends money to another SecureWallet user. Transfers are checked for fraud.',
             done: 'Transfer sent',
-            send: v => api('/api/wallet/transfer', { method: 'POST', body: JSON.stringify({ recipientEmail: v.recipientEmail, amount: v.amount }) }),
-            summary: v => [['To', v.recipientEmail]],
+            send: v => api('/api/wallet/transfer', { method: 'POST', body: JSON.stringify({ recipientEmail: v.recipientEmail, amount: v.amount, pin: v.pin, requestId: v.requestId }) }),
+            summary: v => (v.payee
+                ? [['To', v.payee.name], ['Email', v.payee.email]]
+                : [['To', v.recipientEmail]]),
             heading: v => `Send ${money(v.amount)}`,
         },
         request: {
@@ -355,7 +359,7 @@ if (document.body.dataset.page === 'dashboard') {
             title: 'Withdraw cash', fields: [], review: 'scored',
             hint: 'Takes money out of your wallet. Withdrawals are checked for fraud.',
             done: 'Withdrawal made',
-            send: v => api('/api/wallet/withdraw', { method: 'POST', body: JSON.stringify({ amount: v.amount }) }),
+            send: v => api('/api/wallet/withdraw', { method: 'POST', body: JSON.stringify({ amount: v.amount, pin: v.pin }) }),
             summary: () => [],
             heading: v => `Withdraw ${money(v.amount)}`,
         },
@@ -369,7 +373,7 @@ if (document.body.dataset.page === 'dashboard') {
             title: 'Send to a bank', fields: ['bank', 'accountNumber'], review: 'scored',
             hint: 'Moves money from your wallet to a bank account. Bank transfers are checked for fraud like withdrawals.',
             done: 'Bank transfer sent',
-            send: v => api('/api/payments/bank', { method: 'POST', body: JSON.stringify({ bank: v.bank, accountNumber: v.accountNumber, amount: v.amount }) }),
+            send: v => api('/api/payments/bank', { method: 'POST', body: JSON.stringify({ bank: v.bank, accountNumber: v.accountNumber, amount: v.amount, pin: v.pin }) }),
             summary: v => [['Bank', v.bank], ['Account', '••••' + v.accountNumber.slice(-4)]],
             heading: v => `Send ${money(v.amount)} to ${v.bank}`,
         },
@@ -412,6 +416,8 @@ if (document.body.dataset.page === 'dashboard') {
     let pending = null;
     let payingRequest = null;
     let loanInfo = null;
+    let riskMode = 'advisory';
+    let hasPin = false;
     const loaded = new Map();
 
     const $ = id => document.getElementById(id);
@@ -453,8 +459,8 @@ if (document.body.dataset.page === 'dashboard') {
     }
 
     // ---------- views ----------
-    const VIEWS = ['home', 'savings', 'loans', 'requests'];
-    const VIEW_TITLES = { home: 'My wallet', savings: 'Savings goals', loans: 'Loans', requests: 'Requests' };
+    const VIEWS = ['home', 'savings', 'loans', 'requests', 'security'];
+    const VIEW_TITLES = { home: 'My wallet', savings: 'Savings goals', loans: 'Loans', requests: 'Requests', security: 'Security' };
 
     function showView() {
         const view = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'home';
@@ -470,6 +476,7 @@ if (document.body.dataset.page === 'dashboard') {
         if (view === 'savings') loadSavings().catch(() => {});
         if (view === 'loans') loadLoans().catch(() => {});
         if (view === 'requests') loadRequests().catch(() => {});
+        if (view === 'security') paintSecurity();
         window.scrollTo(0, 0);
     }
     window.addEventListener('hashchange', showView);
@@ -478,10 +485,17 @@ if (document.body.dataset.page === 'dashboard') {
     function checkState(tx) {
         if (tx.direction !== 'out' || !SCORED_TYPES.includes(tx.type) || !tx.fraud_check) return null;
         const fc = tx.fraud_check;
+        // Version 2: a hold or a refund applies whether or not the model
+        // was available to score the payment.
+        const known = fc.scoring_status === 'scored' && fc.fraud_score !== null ? { score: fc.fraud_score } : {};
+        if (tx.status === 'pending') return { ...known, tone: 'high', dot: 'ok', label: 'On hold', held: true };
+        if (tx.risk_action === 'reversed') return { ...known, tone: 'fraud', dot: 'bad', label: 'Stopped, refunded', refunded: true };
         if (fc.scoring_status !== 'scored' || fc.fraud_score === null) {
             return { tone: '', dot: 'idle', label: 'Not scored', long: 'Not scored: the fraud model was unavailable when this was made.' };
         }
         const score = fc.fraud_score;
+        if (tx.risk_action === 'released') return { score, tone: 'low', dot: 'safe', label: 'Reviewed, released' };
+        if (tx.risk_action === 'verified') return { score, tone: 'low', dot: 'safe', label: 'Verified with PIN' };
         if (fc.alert_status === 'confirmed_fraud') return { score, tone: 'fraud', dot: 'bad', label: 'Confirmed fraud' };
         if (fc.alert_status === 'cleared') return { score, tone: 'low', dot: 'safe', label: 'Reviewed, cleared' };
         if (fc.alert_status === 'pending') return { score, tone: 'high', dot: 'ok', label: 'Under review' };
@@ -546,10 +560,11 @@ if (document.body.dataset.page === 'dashboard') {
         icon.appendChild(iconSvg(txIcon(tx)));
         item.appendChild(icon);
         item.appendChild(el('span', 'tx-title', describe(tx)));
-        item.appendChild(el('span', 'tx-amount' + (credit ? ' credit' : ''), `${credit ? '+' : '−'}${formatMoney(tx.amount)}`));
+        const state = checkState(tx);
+        const refunded = state && state.refunded;
+        item.appendChild(el('span', 'tx-amount' + (credit ? ' credit' : '') + (refunded ? ' refunded' : ''), `${credit ? '+' : '−'}${formatMoney(tx.amount)}`));
         item.appendChild(el('span', 'tx-meta', `${formatDate(tx.created_at)} · ${reference(tx.id)}`));
 
-        const state = checkState(tx);
         const pill = el('span', 'pill');
         if (state) {
             if (state.score !== undefined) {
@@ -597,8 +612,11 @@ if (document.body.dataset.page === 'dashboard') {
             receiptRow(dl, 'Balance before', formatMoney(tx.balance_before));
             receiptRow(dl, 'Balance after', formatMoney(tx.balance_after));
         }
-        receiptRow(dl, 'Status', tx.status === 'completed' ? 'Completed' : tx.status);
         const state = checkState(tx);
+        receiptRow(dl, 'Status', tx.status === 'completed' ? 'Completed'
+            : tx.status === 'pending' ? 'On hold: not yet paid out, an analyst is reviewing it'
+            : state && state.refunded ? 'Stopped: the money was returned to your wallet'
+            : tx.status);
         if (state) {
             receiptRow(dl, 'Fraud check', state.score !== undefined ? `${state.label} (risk ${state.score.toFixed(2)})` : state.label);
         } else if (tx.direction === 'out') {
@@ -646,13 +664,16 @@ if (document.body.dataset.page === 'dashboard') {
                 recent.appendChild(chip);
             });
 
-        const underReview = all.filter(tx => {
-            const state = checkState(tx);
-            return state && state.label === 'Under review';
-        }).length;
+        const states = all.map(checkState).filter(Boolean);
+        const underReview = states.filter(state => state.label === 'Under review').length;
+        const onHold = states.filter(state => state.held).length;
         const banner = $('reviewBanner');
-        banner.hidden = underReview === 0;
-        if (underReview) {
+        banner.hidden = underReview + onHold === 0;
+        if (onHold) {
+            banner.replaceChildren(dotLabel('ok', onHold === 1
+                ? '1 payment is on hold. It has left your balance but has not been paid out; an analyst will release it or return it to you.'
+                : `${onHold} payments are on hold. They have left your balance but have not been paid out; an analyst will release them or return them to you.`));
+        } else if (underReview) {
             banner.replaceChildren(dotLabel('ok', underReview === 1
                 ? '1 of your transactions is under review. Your money has moved; an analyst is checking it.'
                 : `${underReview} of your transactions are under review. Your money has moved; an analyst is checking them.`));
@@ -723,7 +744,7 @@ if (document.body.dataset.page === 'dashboard') {
                 rows.push(...data.transactions);
                 if (p >= data.totalPages) break;
             }
-            const lines = [['Reference', 'Date', 'Description', 'Type', 'Money in', 'Money out', 'Balance after', 'Fraud check']];
+            const lines = [['Reference', 'Date', 'Description', 'Type', 'Money in', 'Money out', 'Balance after', 'Status', 'Fraud check']];
             rows.forEach(tx => {
                 const state = checkState(tx);
                 lines.push([
@@ -732,8 +753,9 @@ if (document.body.dataset.page === 'dashboard') {
                     describe(tx),
                     typeLabel(tx),
                     tx.direction === 'in' ? Number(tx.amount).toFixed(2) : '',
-                    tx.direction === 'out' ? Number(tx.amount).toFixed(2) : '',
-                    tx.balance_after !== undefined ? Number(tx.balance_after).toFixed(2) : '',
+                    tx.direction === 'out' && !(state && state.refunded) ? Number(tx.amount).toFixed(2) : '',
+                    tx.balance_after !== undefined && !(state && state.refunded) ? Number(tx.balance_after).toFixed(2) : '',
+                    tx.status === 'pending' ? 'On hold' : state && state.refunded ? 'Stopped and refunded' : 'Completed',
                     state ? state.label : '',
                 ]);
             });
@@ -760,6 +782,7 @@ if (document.body.dataset.page === 'dashboard') {
         actionGrid.hidden = false;
         actionForm.hidden = true;
         reviewPanel.hidden = true;
+        hidePinStep();
         pending = null;
         payingRequest = null;
         action = null;
@@ -768,6 +791,7 @@ if (document.body.dataset.page === 'dashboard') {
     function showForm() {
         actionGrid.hidden = true;
         reviewPanel.hidden = true;
+        hidePinStep();
         actionForm.hidden = false;
         pending = null;
     }
@@ -846,15 +870,33 @@ if (document.body.dataset.page === 'dashboard') {
         receiptRow(dl, 'Balance after', formatMoney(after));
         if (config.review === 'scored') receiptRow(dl, 'Share of balance', `${Math.round(share * 100)}%`);
 
+        // Confirmation of payee: the registered name, and a caution on a
+        // first payment, so a wrong or look-alike address is noticed
+        // before the money moves.
+        const payeeNote = $('payeeNote');
+        payeeNote.hidden = !v.payee;
+        if (v.payee) {
+            payeeNote.className = 'payee' + (v.payee.paidBefore ? '' : ' new');
+            payeeNote.replaceChildren(
+                el('strong', null, v.payee.name),
+                el('span', null, v.payee.paidBefore
+                    ? 'You have paid this person before.'
+                    : 'You have not paid this person before. Check the name is who you expect.')
+            );
+        }
+
         const notice = $('reviewNotice');
         const warn = config.review === 'scored' && share >= LARGE_SHARE;
+        const consequence = riskMode === 'enforce'
+            ? 'you may be asked for your transaction PIN, or the payment may be held until an analyst reviews it.'
+            : 'it may be flagged for review after it completes.';
         notice.hidden = !warn;
         if (warn) {
             notice.replaceChildren(
                 el('strong', null, `This moves ${Math.round(share * 100)}% of your balance. `),
                 document.createTextNode(action === 'transfer'
-                    ? 'Transfers that empty a wallet score higher with the fraud model, so this may be held for review. Make sure you know the recipient.'
-                    : 'Payments out that empty a wallet score higher with the fraud model, so this may be held for review.')
+                    ? `Transfers that empty a wallet score higher with the fraud model, so ${consequence} Make sure you know the recipient.`
+                    : `Payments out that empty a wallet score higher with the fraud model, so ${consequence}`)
             );
         }
 
@@ -869,7 +911,8 @@ if (document.body.dataset.page === 'dashboard') {
         const act = action;
         const config = ACTIONS[act];
         const request = payingRequest;
-        const buttons = [moveButton, $('reviewConfirm'), $('reviewBack'), $('formBack'), ...document.querySelectorAll('.action')];
+        const buttons = [moveButton, $('reviewConfirm'), $('reviewBack'), $('formBack'), $('pinCancel'),
+            $('pinForm').querySelector('button[type=submit]'), ...document.querySelectorAll('.action')];
         buttons.forEach(b => { b.disabled = true; });
         const started = performance.now();
         let data;
@@ -879,8 +922,28 @@ if (document.body.dataset.page === 'dashboard') {
         } catch (error) {
             buttons.forEach(b => { b.disabled = false; });
             if (handleAuth(error)) return;
+            const challenge = error.status === 428 && error.data ? error.data.challenge : null;
+            if (challenge === 'pin') {
+                // The risk engine wants proof it is the account holder.
+                showPinStep(v, error.data);
+                return;
+            }
+            if (v.pin !== undefined && error.status === 403) {
+                // Wrong PIN: stay on the PIN step and say how many tries are left.
+                showPinStep(v, null, error.message);
+                return;
+            }
             showForm();
-            setMessage(moveMessage, failText(error), 'error');
+            if (challenge === 'set_pin') {
+                moveMessage.className = 'message error';
+                const link = el('a', null, 'Set a PIN under Security');
+                link.href = '#security';
+                moveMessage.replaceChildren(
+                    document.createTextNode('This payment looks unusual and needs your transaction PIN, but you have not set one. '),
+                    link, document.createTextNode(', then try again.'));
+            } else {
+                setMessage(moveMessage, failText(error), 'error');
+            }
             loadBalance().catch(() => {});
             return;
         }
@@ -892,7 +955,7 @@ if (document.body.dataset.page === 'dashboard') {
         showGrid();
 
         let requestLinked = true;
-        if (request && data.transactionId) {
+        if (request && data.transactionId && !data.held) {
             try {
                 await api(`/api/requests/${request.id}/pay`, { method: 'POST', body: JSON.stringify({ transactionId: data.transactionId }) });
             } catch (error) {
@@ -913,6 +976,12 @@ if (document.body.dataset.page === 'dashboard') {
         if (state && state.score !== undefined) detail += ` · risk ${state.score.toFixed(2)}`;
         if (state && state.label === 'Not scored') detail += ' · not scored';
         const flagged = state && state.label === 'Under review';
+        if (data.held) {
+            // Not paid out yet. A request being paid stays open until then.
+            toast(data.message || 'Payment on hold for review',
+                `${detail} · it has left your balance and will be released or returned after review${request ? ' · the request is marked paid if it is released' : ''}`, true);
+            return;
+        }
         if (request && !requestLinked) {
             toast('Transfer sent, but the request is still open', `${detail} · decline it in Requests so you are not asked twice`, true);
             return;
@@ -949,9 +1018,111 @@ if (document.body.dataset.page === 'dashboard') {
             }
         }
 
+        if (action === 'transfer') {
+            moveButton.disabled = true;
+            try {
+                v.payee = await api('/api/wallet/recipient?email=' + encodeURIComponent(v.recipientEmail));
+            } catch (error) {
+                if (handleAuth(error)) return;
+                setMessage(moveMessage, error.status === 404
+                    ? 'No SecureWallet account uses that email address. Check the spelling.'
+                    : failText(error), 'error');
+                return;
+            } finally {
+                moveButton.disabled = false;
+            }
+        }
+
         setMessage(moveMessage, '');
         if (config.review) showReview(v);
         else submit(v);
+    });
+
+    // ---------- PIN step (shown when the server challenges a payment) ----------
+    let pinFor = null;
+
+    function hidePinStep() {
+        $('pinStep').hidden = true;
+        $('pinInput').value = '';
+        pinFor = null;
+    }
+
+    function showPinStep(v, challenge, problem) {
+        actionGrid.hidden = true;
+        actionForm.hidden = true;
+        reviewPanel.hidden = true;
+        $('pinStep').hidden = false;
+        pinFor = v;
+        if (challenge) {
+            const reasons = (challenge.risk && challenge.risk.reasons) || [];
+            const list = $('pinReasons');
+            list.replaceChildren(...(reasons.length ? reasons : ['The fraud model scored this payment as unusual']).map(text => {
+                const li = el('li');
+                li.appendChild(dotLabel('warn', text));
+                return li;
+            }));
+            $('pinTitle').textContent = `Confirm ${money(v.amount)} with your PIN`;
+        }
+        setMessage($('pinMessage'), problem || '', problem ? 'error' : '');
+        $('pinInput').value = '';
+        $('pinInput').focus();
+    }
+
+    $('pinForm').addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (!pinFor) return;
+        const pin = $('pinInput').value.trim();
+        if (!/^\d{4}$/.test(pin)) {
+            setMessage($('pinMessage'), 'Enter your 4-digit transaction PIN.', 'error');
+            return;
+        }
+        const v = { ...pinFor, pin };
+        // Cleared at once, so a second click or Enter cannot send it twice.
+        pinFor = null;
+        setMessage($('pinMessage'), '');
+        submit(v);
+    });
+
+    $('pinCancel').addEventListener('click', showGrid);
+
+    // ---------- security: transaction PIN ----------
+    function paintSecurity() {
+        $('pinState').replaceChildren(dotLabel(hasPin ? 'safe' : 'warn', hasPin ? 'PIN is set' : 'No PIN set'));
+        $('pinSetTitle').textContent = hasPin ? 'Change your PIN' : 'Set your PIN';
+        $('pinSetButton').textContent = hasPin ? 'Change PIN' : 'Set PIN';
+        $('pinCurrentField').hidden = !hasPin;
+        $('protectMode').replaceChildren(dotLabel(riskMode === 'enforce' ? 'safe' : 'idle',
+            riskMode === 'enforce' ? 'Protection: enforcing' : 'Protection: advisory'));
+        $('protectText').textContent = riskMode === 'enforce'
+            ? 'Unusual payments need your PIN before they are sent, and high-risk payments are held until an analyst has reviewed them.'
+            : 'Every payment completes straight away. Unusual payments are flagged and reviewed afterwards. Your PIN is asked for only when enforcing is switched on.';
+    }
+
+    $('pinSetForm').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const message = $('pinSetMessage');
+        const password = $('pinPassword').value;
+        const pin = $('pinNew').value.trim();
+        const currentPin = $('pinCurrent').value.trim();
+        if (!password) return setMessage(message, 'Enter your account password.', 'error');
+        if (hasPin && !/^\d{4}$/.test(currentPin)) return setMessage(message, 'Enter your current 4-digit PIN.', 'error');
+        if (!/^\d{4}$/.test(pin)) return setMessage(message, 'Choose a PIN of exactly 4 digits.', 'error');
+        if (pin !== $('pinRepeat').value.trim()) return setMessage(message, 'The two PINs do not match.', 'error');
+        const button = $('pinSetButton');
+        button.disabled = true;
+        try {
+            await api('/api/auth/pin', { method: 'POST', body: JSON.stringify({ password, pin, currentPin: hasPin ? currentPin : undefined }) });
+            event.target.reset();
+            const changed = hasPin;
+            hasPin = true;
+            paintSecurity();
+            setMessage(message, '');
+            toast(changed ? 'PIN changed' : 'PIN set', 'You will be asked for it on unusual payments');
+        } catch (error) {
+            if (!handleAuth(error)) setMessage(message, failText(error), 'error');
+        } finally {
+            button.disabled = false;
+        }
     });
 
     $('reviewBack').addEventListener('click', () => {
@@ -963,6 +1134,7 @@ if (document.body.dataset.page === 'dashboard') {
         if (!pending) return;
         const v = pending;
         pending = null;
+        if (payingRequest) v.requestId = payingRequest.id;
         submit(v);
     });
 
@@ -1270,6 +1442,12 @@ if (document.body.dataset.page === 'dashboard') {
         if (!user) return;
         $('userName').textContent = user.name;
         $('holderName').textContent = user.name;
+        hasPin = !!user.hasPin;
+        try {
+            riskMode = (await api('/api/status')).riskMode || 'advisory';
+        } catch (error) {
+            // Keep the default wording.
+        }
         showView();
         try {
             const banks = await api('/api/payments/banks');
@@ -1301,7 +1479,7 @@ if (document.body.dataset.page === 'admin') {
     const adminMessage = document.getElementById('adminMessage');
 
     const EMPTY = {
-        pending: 'No alerts are waiting for review. New ones appear here when the model flags a transfer or withdrawal.',
+        pending: 'No alerts are waiting for review. New ones appear here when a payment reaches the alert threshold.',
         confirmed_fraud: 'No alerts have been confirmed as fraud yet.',
         cleared: 'No alerts have been dismissed yet.',
     };
@@ -1345,6 +1523,80 @@ if (document.body.dataset.page === 'admin') {
         return out;
     }
 
+    const FEATURE_LABEL = {
+        amount: 'Amount',
+        oldbalanceOrg: 'Sender balance before',
+        newbalanceOrig: 'Sender balance after',
+        oldbalanceDest: 'Recipient balance before',
+        newbalanceDest: 'Recipient balance after',
+        type_encoded: 'Transaction type',
+        balance_discrepancy: 'Balance discrepancy',
+    };
+
+    function featureValue(c) {
+        if (c.feature === 'type_encoded') return c.value === 1 ? 'transfer' : 'cash-out';
+        return formatMoney(c.value);
+    }
+
+    // The risk engine's own record of why the payment was raised: the
+    // behavioural and network signals, and how each model feature moved
+    // the model's score. Unlike the context list, this is the breakdown.
+    function explanation(risk) {
+        const box = el('div', 'signals explain');
+        box.appendChild(el('span', 'mono', 'Why this was raised'));
+
+        const sum = el('p', 'risk-sum');
+        if (risk.model_score === null || risk.model_score === undefined) {
+            sum.append(
+                document.createTextNode('The fraud model was unavailable, so this risk of '),
+                el('strong', null, Number(risk.score).toFixed(2)),
+                document.createTextNode(' comes from the behavioural signals alone.'));
+        } else {
+            sum.append(
+                document.createTextNode('Model score '), el('strong', null, Number(risk.model_score).toFixed(2)),
+                document.createTextNode(risk.signals && risk.signals.length ? ' raised by behaviour to a risk of ' : ', no behavioural signals, risk '),
+                el('strong', null, Number(risk.score).toFixed(2)));
+        }
+        box.appendChild(sum);
+
+        if (risk.signals && risk.signals.length) {
+            const ul = el('ul');
+            risk.signals.forEach(signal => {
+                const li = el('li');
+                const text = el('span', 'why');
+                text.appendChild(dotLabel(signal.weight >= 0.3 ? 'bad' : 'warn', signal.label));
+                li.appendChild(text);
+                li.appendChild(el('span', 'weight mono', `weight ${Number(signal.weight).toFixed(2)}`));
+                ul.appendChild(li);
+            });
+            box.appendChild(ul);
+        }
+
+        const contributions = (risk.contributions || []).filter(c => Math.abs(c.contribution) >= 0.005).slice(0, 5);
+        if (contributions.length) {
+            box.appendChild(el('span', 'mono sub', 'What moved the model score'));
+            const largest = Math.max(...contributions.map(c => Math.abs(c.contribution)));
+            const chart = el('div', 'contrib');
+            contributions.forEach(c => {
+                const up = c.contribution > 0;
+                const rowNode = el('div', 'contrib-row');
+                rowNode.appendChild(el('span', 'contrib-name', `${FEATURE_LABEL[c.feature] || c.feature} (${featureValue(c)})`));
+                const track = el('span', 'contrib-track');
+                const bar = el('i', up ? 'up' : 'down');
+                bar.style.width = `${Math.max(4, (Math.abs(c.contribution) / largest) * 100)}%`;
+                track.appendChild(bar);
+                rowNode.appendChild(track);
+                rowNode.appendChild(el('span', 'contrib-num mono', `${up ? '+' : '−'}${Math.abs(c.contribution).toFixed(2)}`));
+                chart.appendChild(rowNode);
+            });
+            box.appendChild(chart);
+            if (risk.base_value !== null && risk.base_value !== undefined) {
+                box.appendChild(el('p', 'note', `The model starts from ${Number(risk.base_value).toFixed(2)} and each feature moves the score up (orange) or down (green); together they add up to the model score. Balance discrepancy is always zero in this wallet, so the model leans on the balances.`));
+            }
+        }
+        return box;
+    }
+
     function renderAlert(alert) {
         const meta = parseMeta(alert.metadata);
         const type = meta.type === 'withdrawal' ? 'Withdrawal'
@@ -1356,14 +1608,19 @@ if (document.body.dataset.page === 'admin') {
         const tone = alert.status === 'confirmed_fraud' ? 'fraud' : alert.status === 'cleared' ? 'low' : 'high';
 
         const scoreBox = el('div', 'score');
-        scoreBox.appendChild(el('span', 'mono', 'Fraud score'));
+        scoreBox.appendChild(el('span', 'mono', meta.risk ? 'Risk score' : 'Fraud score'));
         scoreBox.appendChild(el('div', 'figure', score.toFixed(2)));
         scoreBox.appendChild(meter(score, tone));
         item.appendChild(scoreBox);
 
         const body = el('div');
         const who = alert.sender_name || alert.sender_email || 'Unknown sender';
-        body.appendChild(el('h3', null, `${type} of ${alert.currency || 'USD'} ${formatMoney(alert.amount)} by ${who}`));
+        const held = alert.transaction_status === 'pending';
+        const heading = el('h3', null, `${type} of ${alert.currency || 'USD'} ${formatMoney(alert.amount)} by ${who}`);
+        if (held) heading.append(' ', el('span', 'badge hold', 'On hold'));
+        else if (meta.risk && meta.risk.action === 'released') heading.append(' ', el('span', 'badge', 'Released'));
+        else if (meta.risk && meta.risk.action === 'reversed') heading.append(' ', el('span', 'badge', 'Refunded'));
+        body.appendChild(heading);
 
         const dl = el('dl');
         dl.appendChild(row('From', alert.sender_email || 'Unknown'));
@@ -1375,6 +1632,10 @@ if (document.body.dataset.page === 'admin') {
         dl.appendChild(row('Made', formatDate(alert.transaction_time)));
         dl.appendChild(row('Reference', reference(alert.transaction_id)));
         body.appendChild(dl);
+
+        if (meta.risk && meta.risk.score !== null && meta.risk.score !== undefined) {
+            body.appendChild(explanation(meta.risk));
+        }
 
         const found = signals(alert, meta);
         if (found.length) {
@@ -1394,8 +1655,8 @@ if (document.body.dataset.page === 'admin') {
 
         if (alert.status === 'pending') {
             const actions = el('div', 'actions');
-            const confirmButton = el('button', 'danger', 'Confirm fraud');
-            const dismissButton = el('button', 'quiet', 'Dismiss');
+            const confirmButton = el('button', 'danger', held ? 'Confirm fraud, refund sender' : 'Confirm fraud');
+            const dismissButton = el('button', 'quiet', held ? 'Release payment' : 'Dismiss');
             confirmButton.type = 'button';
             dismissButton.type = 'button';
             confirmButton.addEventListener('click', () => decide(alert.id, 'confirmed_fraud', [confirmButton, dismissButton]));
@@ -1439,13 +1700,15 @@ if (document.body.dataset.page === 'admin') {
     async function decide(id, decision, buttons) {
         buttons.forEach(button => { button.disabled = true; });
         try {
-            await api(`/api/admin/fraud-alerts/${id}/status`, {
+            const result = await api(`/api/admin/fraud-alerts/${id}/status`, {
                 method: 'PATCH',
                 body: JSON.stringify({ status: decision }),
             });
-            setMessage(adminMessage, decision === 'confirmed_fraud'
+            const moved = result.settlement === 'reversed' ? ' The held money was returned to the sender.'
+                : result.settlement === 'released' ? ' The held payment was released.' : '';
+            setMessage(adminMessage, (decision === 'confirmed_fraud'
                 ? `Alert #${id} confirmed as fraud.`
-                : `Alert #${id} dismissed.`, 'success');
+                : `Alert #${id} dismissed.`) + moved, 'success');
             await load();
         } catch (error) {
             setMessage(adminMessage, error.message, 'error');
@@ -1464,10 +1727,153 @@ if (document.body.dataset.page === 'admin') {
         });
     });
 
+    // ---------- sections: review and attack lab ----------
+    const byId = id => document.getElementById(id);
+
+    document.querySelectorAll('.mode-switch button').forEach(button => {
+        button.addEventListener('click', () => {
+            document.querySelectorAll('.mode-switch button').forEach(b => {
+                b.setAttribute('aria-selected', String(b === button));
+            });
+            document.querySelectorAll('[data-section-panel]').forEach(panel => {
+                panel.hidden = panel.dataset.sectionPanel !== button.dataset.section;
+            });
+            if (button.dataset.section === 'alerts') load();
+        });
+    });
+
+    function paintMode(mode) {
+        const enforce = mode === 'enforce';
+        ['modeBadge', 'labModeBadge'].forEach(id => {
+            byId(id).textContent = enforce ? 'Enforcing' : 'Advisory';
+            byId(id).className = 'badge' + (enforce ? ' hold' : '');
+        });
+        byId('reviewIntro').textContent = enforce
+            ? 'Payments whose risk score reached the alert threshold. Payments marked on hold have left the sender but have not been paid out: confirming fraud returns the money to the sender, and releasing sends it on.'
+            : 'Payments whose risk score reached the alert threshold. In advisory mode the money has already moved; your decision records whether the transaction was fraud.';
+    }
+
+    // ---------- attack lab ----------
+    const OUTCOME = {
+        allowed: ['safe', 'Allowed'],
+        verified: ['safe', 'Verified with PIN'],
+        flagged: ['warn', 'Flagged for review'],
+        challenged: ['warn', 'Stopped: PIN required'],
+        held: ['bad', 'Held for review'],
+        unscored: ['idle', 'Not scored'],
+        not_run: ['idle', 'Did not run'],
+        prevented: ['safe', 'Prevented by an earlier stop'],
+    };
+
+    function renderRun(result) {
+        const s = result.summary;
+        byId('labResult').hidden = false;
+        byId('labResultTitle').textContent = result.scenario.title;
+        byId('labResultMode').textContent = result.mode === 'enforce' ? 'Enforcing' : 'Advisory';
+
+        const stat = (label, value, tone) => {
+            const box = el('div', 'lab-stat' + (tone ? ' ' + tone : ''));
+            box.appendChild(el('span', 'mono', label));
+            box.appendChild(el('strong', null, value));
+            return box;
+        };
+        const stats = [];
+        if (s.attackSteps) {
+            stats.push(stat('Attack steps caught', `${s.detected} of ${s.attackSteps}`, s.detected === s.attackSteps ? 'good' : 'poor'));
+            stats.push(stat('Model alone would catch', `${s.modelAlone} of ${s.attackSteps}`));
+            stats.push(stat('Money stopped', result.mode === 'enforce'
+                ? `${formatMoney(s.stopped)} of ${formatMoney(s.attempted)}`
+                : 'None: advisory mode only flags', result.mode === 'enforce' && s.stopped > 0 ? 'good' : ''));
+        }
+        if (s.normalSteps) {
+            stats.push(stat('False alarms', `${s.falsePositives} of ${s.normalSteps}`, s.falsePositives === 0 ? 'good' : 'poor'));
+        }
+        byId('labSummary').replaceChildren(...stats);
+
+        byId('labTrace').replaceChildren(...result.steps.map(step => {
+            const [tone, label] = OUTCOME[step.outcome] || ['idle', step.outcome];
+            const li = el('li', 'trace-step');
+            const head = el('div', 'trace-head');
+            head.appendChild(el('strong', null, step.label));
+            const out = el('span', 'mono');
+            out.appendChild(dotLabel(tone, label));
+            head.appendChild(out);
+            li.appendChild(head);
+            const what = step.kind === 'transfer' ? `${step.actor} sends ${formatMoney(step.amount)} to ${step.to}`
+                : step.kind === 'withdrawal' ? `${step.actor} withdraws ${formatMoney(step.amount)}`
+                : `${step.actor} sends ${formatMoney(step.amount)} to a bank`;
+            const line = el('div', 'trace-what', what);
+            if (step.risk !== null && step.risk !== undefined) {
+                line.append(' ', meter(step.risk, step.detected ? 'high' : 'low'), el('span', 'mono',
+                    ` risk ${Number(step.risk).toFixed(2)}${step.modelScore !== null && step.modelScore !== undefined ? ' · model alone ' + Number(step.modelScore).toFixed(2) : ''}`));
+            }
+            li.appendChild(line);
+            if (step.reasons && step.reasons.length) {
+                li.appendChild(el('div', 'trace-why', step.reasons.join(' · ')));
+            }
+            const miss = (step.expect === 'detect' && !step.detected) || (step.expect === 'pass' && step.detected);
+            if (miss) li.appendChild(el('div', 'trace-miss', step.expect === 'detect' ? 'Missed: this step should have been caught.' : 'False alarm: this step is ordinary behaviour.'));
+            return li;
+        }));
+    }
+
+    async function loadLab() {
+        let lab;
+        try {
+            lab = await api('/api/admin/lab');
+        } catch (error) {
+            return;
+        }
+        paintMode(lab.mode);
+        byId('labOff').hidden = lab.enabled;
+        byId('labOn').hidden = !lab.enabled;
+        byId('scenarioList').replaceChildren(...lab.scenarios.map(scenario => {
+            const li = el('li', 'console scenario');
+            li.appendChild(el('span', 'mono', scenario.attack ? 'Attack' : 'Control'));
+            li.appendChild(el('h3', null, scenario.title));
+            li.appendChild(el('p', null, scenario.description));
+            const button = el('button', 'small', 'Run scenario');
+            button.type = 'button';
+            button.addEventListener('click', async () => {
+                const all = [...document.querySelectorAll('.scenario button'), byId('labCleanup')];
+                all.forEach(b => { b.disabled = true; });
+                button.textContent = 'Running…';
+                setMessage(byId('labMessage'), '');
+                try {
+                    renderRun(await api('/api/admin/lab/run', { method: 'POST', body: JSON.stringify({ scenario: scenario.id }) }));
+                    byId('labResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } catch (error) {
+                    setMessage(byId('labMessage'), error.message, 'error');
+                } finally {
+                    all.forEach(b => { b.disabled = false; });
+                    button.textContent = 'Run scenario';
+                }
+            });
+            li.appendChild(button);
+            return li;
+        }));
+    }
+
+    byId('labCleanup').addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+            const result = await api('/api/admin/lab/cleanup', { method: 'POST' });
+            byId('labResult').hidden = true;
+            setMessage(byId('labMessage'), result.removed
+                ? `Removed ${result.removed} lab accounts with their transactions and alerts.`
+                : 'There was no lab data to remove.', 'success');
+        } catch (error) {
+            setMessage(byId('labMessage'), error.message, 'error');
+        } finally {
+            button.disabled = false;
+        }
+    });
+
     (async () => {
         const user = await requireUser('admin');
         if (!user) return;
         document.getElementById('userName').textContent = user.name;
-        await load();
+        await Promise.all([load(), loadLab()]);
     })();
 }

@@ -4,9 +4,20 @@ A simulated web-based digital wallet with real-time, Random Forest-based fraud d
 
 **Problem.** Large payment platforms score transactions with machine learning, but those capabilities are proprietary, while smaller and educational wallets rely on fixed rules or have no fraud detection. SecureWallet shows, in a form that can be inspected and reproduced, how a machine learning model can be built into a wallet's transaction pipeline, from the moment a transaction is made to the decision of a human reviewer.
 
-**What it does.** Users deposit, withdraw and send money, send money to a bank, pay bills and shops, buy airtime, save in locked savings goals, borrow and repay loans, and request money from each other. Every transfer, withdrawal and bank transfer is scored by the model as it is made. Transactions scoring 0.50 or above are raised as alerts for an administrator to confirm as fraud or dismiss. Flagged transactions are not blocked.
+**What it does.** Users deposit, withdraw and send money, send money to a bank, pay bills and shops, buy airtime, save in locked savings goals, borrow and repay loans, and request money from each other. Every transfer, withdrawal and bank transfer is scored by the model as it is made. Transactions scoring 0.50 or above are raised as alerts for an administrator to confirm as fraud or dismiss. In version 1.0, and in the default advisory mode of version 2, flagged transactions are not blocked.
 
 No real money moves. The model is trained on PaySim, a synthetic mobile money dataset.
+
+## Version 2 (this branch)
+
+Version 1.0, the version described in the project report, is tagged `v1.0`. This branch adds:
+
+- **A risk engine.** The model score is combined with behavioural signals (payment velocity, unusual amounts, first-time recipients, split payments) and network signals (pass-through, fan-in to a new account, round trips) read from the wallet's own history. See `docs/RISK_ENGINE.md`.
+- **Explanations.** The scoring service returns how much each feature moved the model's score, and the analyst sees this, with the signals, on the alert.
+- **Tiered responses.** With `RISK_MODE=enforce`, unusual payments need the user's transaction PIN and high-risk payments are held until an analyst releases or refunds them. The default, `advisory`, keeps the version 1 behaviour of flagging without blocking.
+- **Confirmation of payee.** The recipient's registered name is shown before a transfer is confirmed.
+- **An attack lab.** With `ATTACK_LAB=1`, an administrator can run scripted fraud scenarios (account takeover, rapid draining, a mule chain, a collector account, round trips) through the real payment path and see what was caught, compared with the model on its own.
+- **Deployment and automation.** Docker Compose for the whole system, HTTPS in production through Caddy, security headers, a sign-in rate limit, and GitHub Actions running every test case on each push. See `docs/DEPLOYMENT.md`.
 
 ## Architecture
 
@@ -17,11 +28,11 @@ No real money moves. The model is trained on PaySim, a synthetic mobile money da
 | Data | MySQL 8.0 (InnoDB), seven tables | `database/schema.sql`, `database/migrations/` |
 | Fraud scoring | Python, FastAPI, scikit-learn | `ml/ml/app.py`, `ml/ml/features.py` |
 
-The Express server calls the scoring service (`POST /score`) after each transfer, withdrawal or bank transfer commits, with a 2-second timeout. If the service is unavailable, the transaction still completes and is recorded as `unscored`.
+The Express server calls the scoring service (`POST /score`) for each transfer, withdrawal or bank transfer before it commits, with a 2-second timeout, and combines the score with the risk engine's signals. If the service is unavailable, the transaction is recorded as `unscored` and the signals alone decide the risk.
 
 ## Tested environment
 
-The system was developed and tested as a local prototype on one Windows 11 laptop (AMD Ryzen 5 5625U, 7.5 GB RAM). It is not deployed publicly.
+The system was developed and tested on one Windows 11 laptop (AMD Ryzen 5 5625U, 7.5 GB RAM).
 
 | Software | Tested version |
 |---|---|
@@ -34,13 +45,25 @@ The system was developed and tested as a local prototype on one Windows 11 lapto
 
 Exact Node.js package versions are recorded in `package-lock.json`.
 
-## Running it locally
+## Running it with Docker
+
+With Docker installed and `DB_PASSWORD` and `SESSION_SECRET` set in `.env`:
+
+```
+docker compose up --build -d
+docker compose exec web node scripts/create-admin.js "Your Name" you@example.com "a-strong-password"
+```
+
+Then open http://localhost:3000. `docs/DEPLOYMENT.md` covers this and deployment to a server with HTTPS.
+
+## Running it locally without Docker
 
 ### 1. Install
 
 ```
 git clone https://github.com/Makau-1/wallet-fraud-system.git
 cd wallet-fraud-system
+git checkout v2-risk-engine
 npm install
 cd ml
 python -m venv venv
@@ -59,10 +82,11 @@ CREATE DATABASE wallet_fraud_db;
 mysql -u root -p wallet_fraud_db -e "source database/schema.sql"
 ```
 
-To upgrade a database created before the money services were added, run the migration instead of the full schema:
+To upgrade an existing database instead of recreating it, run the migrations it has not had yet:
 
 ```
 mysql -u root -p wallet_fraud_db -e "source database/migrations/002_money_services.sql"
+mysql -u root -p wallet_fraud_db -e "source database/migrations/003_risk_engine.sql"
 ```
 
 ### 3. Environment
@@ -78,11 +102,15 @@ DB_NAME=wallet_fraud_db
 SESSION_SECRET=any-long-random-string
 ML_URL=http://127.0.0.1:8000
 PORT=3000
+RISK_MODE=advisory
+ATTACK_LAB=0
 ```
+
+`RISK_MODE` is `advisory` (flag only) or `enforce` (PIN challenge and holds). `ATTACK_LAB=1` switches on the attack lab for administrators. `.env.example` lists the settings.
 
 ### 4. Model
 
-The trained model (`ml/fraud_model.pkl`) is not committed. Generate it by running `ml/model_comparison.ipynb` to the end, which saves the bundle. The processed dataset and the training and test splits are committed in `ml/data/` (tracked deliberately despite the general `*.csv` rule), so the raw PaySim file is needed only to repeat the preprocessing. The raw dataset is available from Kaggle (https://www.kaggle.com/datasets/ealaxi/paysim1) with a free account.
+The trained model (`ml/fraud_model.pkl`) is not committed. Build it from the `ml` folder with `venv\Scripts\python.exe train_model.py`, which trains the same Random Forest as `ml/model_comparison.ipynb` (same data, split, parameters and seed) in a few seconds. Running the notebook to the end also saves it. The processed dataset and the training and test splits are committed in `ml/data/` (tracked deliberately despite the general `*.csv` rule), so the raw PaySim file is needed only to repeat the preprocessing. The raw dataset is available from Kaggle (https://www.kaggle.com/datasets/ealaxi/paysim1) with a free account.
 
 ### 5. Start the services
 
@@ -104,7 +132,7 @@ npm run dev
 |---|---|
 | http://127.0.0.1:8000/health | `status: ok`, model `random_forest`, threshold `0.5` |
 | http://localhost:3000/api | "Wallet Fraud System API is running" |
-| http://localhost:3000/api/status | wallet, database and scoring all `operational` |
+| http://localhost:3000/api/status | wallet, database and scoring all `operational`; shows the risk mode |
 
 Then open http://localhost:3000.
 
@@ -112,8 +140,8 @@ Then open http://localhost:3000.
 
 Register an account through the website, then give it the administrator role:
 
-```sql
-UPDATE users SET role = 'admin' WHERE email = 'your-admin-email@example.com';
+```
+node scripts/create-admin.js your-admin-email@example.com
 ```
 
 Signing in with that account opens the fraud review page.
@@ -131,6 +159,16 @@ Stop the scoring service, then:
 ```
 node tests/run-tests.js --tc16     # TC-16: transfer while scoring is unavailable
 ```
+
+Version 2 cases. Set `RISK_MODE=enforce` and `ATTACK_LAB=1` in `.env`, restart the website, then:
+
+```
+node tests/run-v2-tests.js         # TC-27 to TC-38
+```
+
+In advisory mode the cases that need enforcement are reported as not run. Set `RISK_MODE` back to `advisory` before running `run-tests.js` again, because TC-13 and TC-14 expect flagged transfers to complete.
+
+Every push runs both suites automatically through GitHub Actions (`.github/workflows/tests.yml`).
 
 Feature consistency check, from the `ml` folder:
 
@@ -156,13 +194,18 @@ The committed results in `tests/results/` are from the run reported in Chapter 5
 | GET | `/api/wallet/balance`, `/api/wallet/history` | User |
 | POST | `/api/wallet/deposit` | User |
 | POST | `/api/wallet/withdraw`, `/api/wallet/transfer` | User (scored) |
+| GET | `/api/wallet/recipient?email=` | User (confirmation of payee) |
+| POST | `/api/auth/pin` | User (set the transaction PIN) |
 | POST | `/api/payments/bank` | User (scored) |
 | POST | `/api/payments/bill` | User |
 | GET, POST | `/api/savings`, `/api/savings/:id/deposit`, `/api/savings/:id/withdraw` | User |
 | GET, POST | `/api/loans`, `/api/loans/repay` | User |
 | GET, POST | `/api/requests`, `/api/requests/:id/pay`, `/decline`, `/cancel` | User |
 | GET | `/api/admin/fraud-alerts?status=pending` | Administrator |
-| PATCH | `/api/admin/fraud-alerts/:id/status` | Administrator |
+| PATCH | `/api/admin/fraud-alerts/:id/status` | Administrator (also releases or refunds a held payment) |
+| GET, POST | `/api/admin/lab`, `/api/admin/lab/run`, `/api/admin/lab/cleanup` | Administrator (attack lab) |
+
+A scored payment answers HTTP 428 with `challenge: "pin"` when the PIN is needed; the client sends the same request again with `pin`.
 
 ## Model
 
@@ -172,6 +215,7 @@ Random Forest (200 trees, maximum depth 12, balanced class weights) on seven fea
 
 - `master`: released version, tagged `v1.0` for submission.
 - `develop`: integration branch.
+- `v2-risk-engine`: version 2, described above.
 - `feature/auth-module`, `feature/wallet-core`: module branches, merged into `develop`.
 - Tags `sprint-1-complete` and `sprint-2-complete` mark sprint milestones.
 
