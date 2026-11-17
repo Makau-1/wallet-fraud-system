@@ -497,8 +497,13 @@ async function suite() {
         }, scoring);
 
     await record('TC-58', 'FR-35', 'Drift between live payments and the training data',
-        'The drift check reports a population stability index for each model feature',
+        'The drift check reports a population stability index for each model feature (at least 20 scored payments are made first, so the case does not depend on what ran before it)',
         async () => {
+            const a = await user('drifta', { deposit: 20000, pin: true });
+            const b = await user('driftb');
+            for (let i = 0; i < 21; i += 1) {
+                await a.call('POST', '/api/wallet/transfer', { recipientEmail: b.email, amount: 50 + i * 7, pin: PIN, purpose: 'family_friends' });
+            }
             const drift = await boss.call('GET', '/api/admin/models/drift');
             const features = Object.keys(drift.data.features || {});
             return { pass: drift.status === 200 && features.length === 7,
