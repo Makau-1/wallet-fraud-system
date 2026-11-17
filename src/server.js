@@ -14,6 +14,20 @@ const adminRoutes = require('./routes/adminRoutes');
 const servicesRoutes = require('./routes/servicesRoutes');
 const riskEngine = require('./services/riskEngine');
 const attackLab = require('./services/attackLab');
+const apiV1Routes = require('./routes/apiV1Routes');
+const ussdRoutes = require('./routes/ussdRoutes');
+const sessionStore = require('./config/sessionStore');
+const authMiddleware = require('./middleware/authMiddleware');
+const mpesaController = require('./controllers/mpesaController');
+const journal = require('./services/journal');
+const reconcile = require('./services/reconcile');
+const metrics = require('./services/metrics');
+const events = require('./services/events');
+const payments = require('./services/payments');
+const scoringQueue = require('./services/scoringQueue');
+const webhooks = require('./services/webhooks');
+const mpesa = require('./services/mpesa');
+const { purgeExpired } = require('./middleware/idempotency');
 
 const app = express();
 app.disable('x-powered-by');
@@ -22,6 +36,9 @@ const PRODUCTION = process.env.NODE_ENV === 'production';
 // Behind a reverse proxy (Caddy in docker-compose.prod.yml) the client's
 // address and the HTTPS scheme arrive in forwarded headers.
 if (PRODUCTION) app.set('trust proxy', 1);
+
+// Response times for the System page and /metrics (version 3).
+app.use(metrics.middleware);
 
 // Security headers on every response.
 app.use((req, res, next) => {
@@ -107,6 +124,7 @@ if (!process.env.SESSION_SECRET) {
 app.use(
     session({
         secret: process.env.SESSION_SECRET,
+        store: sessionStore,
         resave: false,
         saveUninitialized: false,
         // Signed out after two hours without activity.
@@ -119,6 +137,31 @@ app.use(
         }
     })
 );
+
+// Public fraud API (API keys, not sessions) and Safaricom's M-Pesa callback
+// (version 3).
+app.use('/api/v1', apiV1Routes);
+app.post('/api/mpesa/callback/:token', mpesaController.callback);
+app.use('/api/ussd', ussdRoutes);
+
+// Live updates for the signed-in user (version 3).
+app.get('/api/events', authMiddleware, events.stream);
+
+// Prometheus metrics: an administrator's session, or the bearer token in
+// METRICS_TOKEN for a monitoring tool.
+app.get('/metrics', async (req, res) => {
+    const token = process.env.METRICS_TOKEN;
+    const bearer = (req.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+    if (!(req.session.role === 'admin' || (token && bearer === token))) {
+        return res.status(401).type('text/plain').send('Unauthorised\n');
+    }
+    let backlog = 0;
+    try { backlog = await scoringQueue.backlog(); } catch (error) { backlog = -1; }
+    return res.type('text/plain; version=0.0.4').send(metrics.prometheus({
+        unscored_backlog: backlog,
+        sse_streams: events.connectionCount().streams,
+    }));
+});
 
 // API routes
 app.use('/api/auth', authRoutes);
@@ -170,6 +213,8 @@ app.get('/api/status', async (req, res) => {
         ...status,
         riskMode: riskEngine.mode(),
         attackLab: attackLab.enabled(),
+        mpesaMode: mpesa.mode(),
+        ussdSimulator: process.env.USSD_SIMULATOR === '1',
         checked_at: new Date().toISOString(),
     };
     statusCachedAt = Date.now();
@@ -185,9 +230,36 @@ db.query('SELECT 1')
         console.error('MySQL connection failed:', error.message);
     });
 
-// Start server
+// Background work (version 3), all in this process.
+function startWorkers() {
+    scoringQueue.start();
+    webhooks.start();
+    const every = (ms, fn, name) => {
+        const timer = setInterval(() => fn().catch(error => console.error(`[${name}]`, error.message)), ms);
+        timer.unref();
+    };
+    every(15000, payments.releaseDueCoolingOff, 'CoolingOff');
+    every(30000, mpesa.expireStale, 'Mpesa');
+    every(60 * 60 * 1000, purgeExpired, 'Idempotency');
+    reconcile.schedule(result => events.toAdmins('reconciliation.finished', { id: result.id, ok: result.ok }));
+}
+
+// Start server. The journal records any balances that existed before it
+// was introduced before the first request is accepted.
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+journal.ensureOpened()
+    .then((opened) => {
+        if (opened.opened) console.log(`Journal opened with the balances of ${opened.accounts} accounts`);
+    })
+    .catch((error) => {
+        console.error('Journal not ready:', error.message, '- run node scripts/migrate.js');
+    })
+    .finally(() => {
+        if (process.env.NO_WORKERS !== '1') startWorkers();
+        app.listen(PORT, () => {
+            console.log(`Server running on port ${PORT}`);
+        });
+    });
+
+module.exports = app;

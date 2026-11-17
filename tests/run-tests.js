@@ -35,8 +35,15 @@ function client() {
             },
             body: body !== undefined ? JSON.stringify(body) : undefined,
         });
-        const setCookie = response.headers.get('set-cookie');
-        if (setCookie) cookie = setCookie.split(';')[0];
+        // Keep every cookie the server sets (session and device), as a browser does.
+        const setCookies = typeof response.headers.getSetCookie === 'function'
+            ? response.headers.getSetCookie()
+            : (response.headers.get('set-cookie') ? [response.headers.get('set-cookie')] : []);
+        if (setCookies.length) {
+            const jar = new Map(cookie ? cookie.split('; ').map(c => [c.split('=')[0], c]) : []);
+            setCookies.forEach(c => { const pair = c.split(';')[0]; jar.set(pair.split('=')[0], pair); });
+            cookie = [...jar.values()].join('; ');
+        }
         let data = {};
         try { data = await response.json(); } catch (e) { data = {}; }
         return { status: response.status, data };
@@ -89,6 +96,27 @@ async function cleanup() {
     const [wallets] = await db.query(
         "SELECT w.id FROM wallets w JOIN users u ON u.id = w.user_id WHERE u.email LIKE '%@test.securewallet'");
     const ids = wallets.map(w => w.id);
+    // Version 3: move whatever the test accounts still hold out in the
+    // double-entry journal first, so the books stay balanced once they are
+    // deleted, and remove chamas and API clients that only tests used.
+    const [chamas] = await db.query(
+        `SELECT c.id FROM chamas c WHERE EXISTS (SELECT 1 FROM chama_members m JOIN users u ON u.id = m.user_id
+            WHERE m.chama_id = c.id AND u.email LIKE '%@test.securewallet')
+          AND NOT EXISTS (SELECT 1 FROM chama_members m JOIN users u ON u.id = m.user_id
+            WHERE m.chama_id = c.id AND u.email NOT LIKE '%@test.securewallet')`).catch(() => [[]]);
+    const chamaIds = chamas.map(c => c.id);
+    if (ids.length || chamaIds.length) {
+        const journal = require('../src/services/journal');
+        const { withTransaction } = require('../src/services/ledger');
+        await withTransaction(async (connection) => {
+            await require('../src/services/payments').refundHeldToClosing(connection, ids);
+            return journal.closeAccounts(connection, { walletIds: ids, chamaIds }, 'Test clean-up');
+        });
+    }
+    if (chamaIds.length) await db.query('DELETE FROM chamas WHERE id IN (?)', [chamaIds]);
+    await db.query("DELETE FROM api_clients WHERE name LIKE 'Test client %'").catch(() => {});
+    await db.query("DELETE FROM idempotency_keys WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@test.securewallet')").catch(() => {});
+    await db.query("DELETE FROM sus_responses WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@test.securewallet')").catch(() => {});
     if (ids.length) {
         await db.query(
             'DELETE fa FROM fraud_alerts fa JOIN transactions t ON t.id = fa.transaction_id WHERE t.sender_wallet_id IN (?) OR t.receiver_wallet_id IN (?)', [ids, ids]);

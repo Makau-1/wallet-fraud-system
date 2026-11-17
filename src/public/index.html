@@ -34,7 +34,7 @@
             <div class="hero-copy">
                 <span class="mono"><span class="dot ok"></span>Digital wallet &middot; fraud checks built in</span>
                 <h1>Money that moves fast. <em>Fraud</em> that doesn't.</h1>
-                <p>Send money, pay bills, buy airtime, save towards a goal and borrow in seconds. A machine learning model checks every transfer and withdrawal the moment you make it, and an analyst reviews anything that looks wrong.</p>
+                <p>Send money, deposit by M-Pesa, pay bills, save with your chama and borrow in seconds. A machine learning model and behavioural checks look at every transfer before it leaves, scam warnings step in before you are tricked, and an analyst reviews anything that looks wrong.</p>
                 <div class="cta-row" id="heroActions">
                     <a class="button big" href="register.html">Open a free wallet</a>
                     <a class="button quiet big" href="login.html">Sign in</a>
@@ -84,28 +84,32 @@
                 <li class="console feature"><span class="action-icon" data-icon="loan"></span><h3>Instant loans</h3><p>Borrow into your wallet with a limit that grows with the money you receive, and repay in parts.</p></li>
                 <li class="console feature"><span class="action-icon" data-icon="statement"></span><h3>Receipts and statements</h3><p>Every transaction has a printable receipt, and you can download your full statement as a spreadsheet.</p></li>
                 <li class="console feature"><span class="action-icon" data-icon="shield"></span><h3>Fraud review</h3><p>See which of your transactions were checked, which are under review and what the analyst decided.</p></li>
+                <li class="console feature"><span class="action-icon" data-icon="mpesa"></span><h3>M-Pesa and USSD</h3><p>Top up from M-Pesa with a prompt on your phone, pay people by phone number, and use the wallet from any phone through a USSD menu.</p></li>
+                <li class="console feature"><span class="action-icon" data-icon="chama"></span><h3>Chamas</h3><p>Save with your group in a shared pot. Everyone sees the contributions, and a payout needs most members to approve it.</p></li>
+                <li class="console feature"><span class="action-icon" data-icon="bell"></span><h3>Scam protection</h3><p>A first large payment asks what it is for. If it looks like a common scam you get a warning and 30 minutes to change your mind.</p></li>
+                <li class="console feature"><span class="action-icon" data-icon="key"></span><h3>Account security</h3><p>Two-step sign-in, alerts when a new device signs in, a transaction PIN, and a button to freeze your account if your phone is lost.</p></li>
             </ul>
         </section>
 
         <!-- How it works -->
         <section class="landing-section" id="how" aria-labelledby="howHeading">
             <span class="mono">How fraud checks work</span>
-            <h2 id="howHeading">Checked in milliseconds, reviewed by a person</h2>
+            <h2 id="howHeading">Checked before it leaves, reviewed by a person</h2>
             <ol class="steps">
                 <li class="console">
                     <span class="step-num">01</span>
                     <h3>You make a transaction</h3>
-                    <p>Transfers, withdrawals and bank transfers are recorded straight away, so your money is never held up waiting for a check.</p>
+                    <p>Transfers, withdrawals and bank transfers are checked before any money moves. You always see the recipient's registered name, and a first large payment to someone new asks what it is for.</p>
                 </li>
                 <li class="console">
                     <span class="step-num">02</span>
                     <h3>The model scores it</h3>
-                    <p>A Random Forest trained on the PaySim mobile money dataset scores the transaction from its amount, type and the balances before and after.</p>
+                    <p>A Random Forest trained on the PaySim mobile money dataset scores the transaction, and checks on your usual behaviour, your device and how money is moving between accounts add what the model alone cannot see.</p>
                 </li>
                 <li class="console">
                     <span class="step-num">03</span>
                     <h3>An analyst reviews alerts</h3>
-                    <p>Anything scoring 0.50 or more goes to the fraud review queue, where an analyst confirms it as fraud or clears it. You see the outcome in your activity.</p>
+                    <p>Unusual payments ask for your PIN, and high-risk ones are held until an analyst releases or refunds them. If a payment wasn't you, one tap freezes your account and opens a dispute.</p>
                 </li>
             </ol>
             <div class="stat-band">
@@ -147,6 +151,7 @@
 
     <footer class="site-footer">
         <span class="mono">A Webmasters project</span>
+        <span class="mono footer-links"><a href="developers.html">Fraud API for developers</a> &middot; <a href="ussd.html">Try the USSD menu</a></span>
         <span class="mono">Simulated wallet &middot; no real money moves</span>
     </footer>
     <script src="app.js"></script>

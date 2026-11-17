@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureWallet | Fraud API</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="developers">
+    <header class="topbar">
+        <a class="brand" href="index.html">
+            <img class="brand-logo" src="img/webmasters-logo.png" alt="Webmasters">
+            <span class="brand-divider" aria-hidden="true"></span>
+            <span class="brand-product">SecureWallet</span>
+        </a>
+        <div class="who"><a href="/api/v1/openapi.json" class="button quiet">OpenAPI file</a></div>
+    </header>
+    <main class="page doc narrow">
+        <div class="page-head">
+            <span class="mono">Developers</span>
+            <h1 style="margin-top:10px">SecureWallet Fraud API</h1>
+            <p>The risk engine behind SecureWallet, offered to other wallets, payment gateways and SACCOs. Send each outgoing payment before you complete it; act on the decision. A simulated service built for a final-year project: do not use it for real payments.</p>
+        </div>
+
+        <h2>How it works</h2>
+        <p>Each payment is scored by the machine learning model and checked against your own traffic for the patterns of account takeover and money mules: bursts of payments, unusual amounts, first payments to someone new, money passed straight on, new accounts collecting from many payers, and money going in circles. You get one of three decisions:</p>
+        <table class="data-table"><tr><th>Decision</th><th>What to do</th></tr>
+            <tr><td><code>allow</code></td><td>Complete the payment.</td></tr>
+            <tr><td><code>challenge</code></td><td>Ask your customer for a second factor (a PIN or one-time code) first.</td></tr>
+            <tr><td><code>review</code></td><td>Hold the payment for a person to check.</td></tr></table>
+        <p>Your customers' history is kept separately from every other client's; the engine judges them only against your traffic.</p>
+
+        <h2>Authentication</h2>
+        <p>Send your API key in the <code>Authorization</code> header. Keys are issued by the SecureWallet team and shown once.</p>
+        <pre>Authorization: Bearer swk_live_…</pre>
+
+        <div id="endpoints"></div>
+
+        <h2>Webhooks</h2>
+        <p>When an assessment is <code>challenge</code> or <code>review</code>, your webhook URL receives an <code>assessment.flagged</code> event. Verify the <code>SecureWallet-Signature</code> header before trusting it:</p>
+        <pre>SecureWallet-Signature: t=1763370000,v1=5f2b…
+
+expected = HMAC_SHA256(webhook_secret, t + "." + raw_body)  (hex)
+reject if expected != v1, or if t is more than 5 minutes old</pre>
+        <p>Failed deliveries are retried after 1, 5, 15, 60 and 360 minutes. <code>scripts/webhook-receiver.js</code> in the repository is a complete receiver.</p>
+
+        <h2>Try it</h2>
+        <form class="console try" id="tryForm" novalidate>
+            <label for="tryKey">API key</label>
+            <input id="tryKey" placeholder="swk_live_…" autocomplete="off">
+            <label for="tryBody">Request body</label>
+            <textarea id="tryBody" rows="10" spellcheck="false"></textarea>
+            <button type="submit">Send to /assess</button>
+            <pre id="tryOut" hidden></pre>
+        </form>
+    </main>
+    <script src="app.js"></script>
+    <script src="pages-v3.js"></script>
+</body>
+</html>

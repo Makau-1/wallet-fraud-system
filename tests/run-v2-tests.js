@@ -38,8 +38,15 @@ function client() {
             },
             body: body !== undefined ? JSON.stringify(body) : undefined,
         });
-        const setCookie = response.headers.get('set-cookie');
-        if (setCookie) cookie = setCookie.split(';')[0];
+        // Keep every cookie the server sets (session and device), as a browser does.
+        const setCookies = typeof response.headers.getSetCookie === 'function'
+            ? response.headers.getSetCookie()
+            : (response.headers.get('set-cookie') ? [response.headers.get('set-cookie')] : []);
+        if (setCookies.length) {
+            const jar = new Map(cookie ? cookie.split('; ').map(c => [c.split('=')[0], c]) : []);
+            setCookies.forEach(c => { const pair = c.split(';')[0]; jar.set(pair.split('=')[0], pair); });
+            cookie = [...jar.values()].join('; ');
+        }
         let data = {};
         try { data = await response.json(); } catch (e) { data = {}; }
         return { status: response.status, data, headers: response.headers };
@@ -109,8 +116,10 @@ async function heldPayment(tag) {
     const source = await user(`${tag}s`, { deposit: 20000 });
     const middle = await user(`${tag}m`);
     const target = await user(`${tag}t`, { deposit: 100 });
-    await source.call('POST', '/api/wallet/transfer', { recipientEmail: middle.email, amount: 3000 });
-    const sent = await middle.call('POST', '/api/wallet/transfer', { recipientEmail: target.email, amount: 3000 });
+    // Version 3: first transfers of KES 1,000 or more need a purpose in
+    // enforce mode (the scam check); an ordinary purpose is given here.
+    await source.call('POST', '/api/wallet/transfer', { recipientEmail: middle.email, amount: 3000, purpose: 'family_friends' });
+    const sent = await middle.call('POST', '/api/wallet/transfer', { recipientEmail: target.email, amount: 3000, purpose: 'family_friends' });
     return { middle, target, sent };
 }
 
@@ -351,8 +360,8 @@ async function suite() {
             const payer = await user('reqp');
             const asker = await user('reqa', { deposit: 100 });
             const request = await asker.call('POST', '/api/requests', { email: payer.email, amount: 3000, note: 'held request' });
-            await source.call('POST', '/api/wallet/transfer', { recipientEmail: payer.email, amount: 3000 });
-            const sent = await payer.call('POST', '/api/wallet/transfer', { recipientEmail: asker.email, amount: 3000, requestId: request.data.id });
+            await source.call('POST', '/api/wallet/transfer', { recipientEmail: payer.email, amount: 3000, purpose: 'family_friends' });
+            const sent = await payer.call('POST', '/api/wallet/transfer', { recipientEmail: asker.email, amount: 3000, requestId: request.data.id, purpose: 'family_friends' });
             const statusOf = async () => (await db.execute('SELECT status FROM money_requests WHERE id = ?', [request.data.id]))[0][0].status;
             const during = await statusOf();
             const held = await txOf(sent.data.transactionId);

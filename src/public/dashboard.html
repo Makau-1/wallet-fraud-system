@@ -21,9 +21,18 @@
             <a href="#savings" data-view="savings">Savings</a>
             <a href="#loans" data-view="loans">Loans</a>
             <a href="#requests" data-view="requests">Requests <span class="count" id="navRequestCount" hidden>0</span></a>
+            <a href="#chamas" data-view="chamas">Chamas</a>
             <a href="#security" data-view="security">Security</a>
         </nav>
         <div class="who">
+            <button type="button" class="icon-button" id="langToggle" title="Kiswahili / English" aria-label="Switch language">SW</button>
+            <div class="bell-wrap">
+                <button type="button" class="icon-button" id="bellButton" aria-label="Notifications" aria-expanded="false" aria-controls="notifPanel"><span class="action-icon" data-icon="bell"></span><span class="count" id="bellCount" hidden>0</span></button>
+                <section class="notif-panel" id="notifPanel" hidden aria-label="Notifications">
+                    <div class="console-head"><span class="mono">Notifications</span><span class="mono live" id="liveState"><span class="dot idle"></span>Connecting</span></div>
+                    <ul class="notif-list" id="notifList"></ul>
+                </section>
+            </div>
             <span id="userName"></span>
             <button id="logoutButton" class="quiet" type="button">Log out</button>
         </div>
@@ -31,6 +40,8 @@
 
     <main class="page">
         <h1 class="visually-hidden" id="viewHeading">My wallet</h1>
+        <div id="frozenBanner" class="banner frozen" role="alert" hidden></div>
+        <div id="deviceBanner" class="banner" hidden></div>
 
         <!-- ============================ HOME ============================ -->
         <section data-view-panel="home" class="dashboard">
@@ -67,6 +78,7 @@
                             <button type="button" class="action" data-action="paybill"><span class="action-icon" data-icon="paybill"></span>Pay bill</button>
                             <button type="button" class="action" data-action="till"><span class="action-icon" data-icon="till"></span>Buy goods</button>
                             <button type="button" class="action" data-action="airtime"><span class="action-icon" data-icon="airtime"></span>Airtime</button>
+                            <button type="button" class="action" id="mpesaAction"><span class="action-icon" data-icon="mpesa"></span>M-Pesa</button>
                         </div>
                     </div>
 
@@ -138,6 +150,31 @@
                             <button type="submit">Confirm payment</button>
                         </div>
                     </form></div>
+
+                    <div id="purposeStep" class="review purpose-step" hidden>
+                        <span class="mono">Before you send</span>
+                        <h3 id="purposeTitle" style="margin-top:10px">What is this payment for?</h3>
+                        <p class="hint">You have not paid this person before. Scammers often tell people what to say, so answer honestly: nobody else sees this.</p>
+                        <div id="purposeList" class="purpose-list" role="group" aria-label="What the payment is for"></div>
+                        <div id="scamWarning" class="scam-warning" role="alert" hidden>
+                            <strong>Stop and check. This is how many scams start.</strong>
+                            <p>You chose: <em id="scamReason"></em>.</p>
+                            <ul>
+                                <li>Safaricom, banks and SecureWallet never call or text asking you to send money.</li>
+                                <li>Real jobs, prizes and loans never charge a fee first.</li>
+                                <li>If someone says they sent you money by mistake, check your balance yourself. Never "send it back" to a different number.</li>
+                                <li>Guaranteed profits are a sign of a scam.</li>
+                            </ul>
+                            <p>If you continue, the payment waits for a cooling-off period before it is sent, and you can cancel it from your activity until then.</p>
+                            <div class="actions">
+                                <button id="scamCancel" type="button">Cancel payment</button>
+                                <button id="scamContinue" class="quiet" type="button">Continue with cooling-off</button>
+                            </div>
+                        </div>
+                        <div class="actions" style="margin-top:16px">
+                            <button id="purposeCancel" class="quiet" type="button">Cancel</button>
+                        </div>
+                    </div>
                 </section>
             </div>
 
@@ -285,6 +322,39 @@
             </div>
         </section>
 
+        <!-- ============================ CHAMAS ============================ -->
+        <section data-view-panel="chamas" hidden>
+            <div class="page-head">
+                <span class="mono">Group savings</span>
+                <h2 class="view-title">Chamas</h2>
+                <p>Save together with family, friends or colleagues. Everyone sees who has contributed what, and money leaves the pot only when most members approve.</p>
+            </div>
+            <div class="dashboard">
+                <div class="stack">
+                    <section class="console" aria-labelledby="myChamasHead">
+                        <div class="console-head"><span class="mono" id="myChamasHead">Your chamas</span></div>
+                        <ul class="simple-list chama-list" id="chamaList"></ul>
+                    </section>
+                    <form class="console" id="chamaForm" novalidate>
+                        <div class="console-head"><span class="mono">Start a chama</span></div>
+                        <label for="chamaName">Name</label>
+                        <input id="chamaName" maxlength="80" placeholder="For example, Office Merry-Go-Round">
+                        <label for="chamaPurpose">What it is for (optional)</label>
+                        <input id="chamaPurpose" maxlength="200" placeholder="For example, December holiday">
+                        <label for="chamaGoal">Goal amount (optional)</label>
+                        <input id="chamaGoal" type="number" inputmode="decimal" min="1" step="0.01" placeholder="0.00">
+                        <label for="chamaContribution">Usual contribution (optional)</label>
+                        <input id="chamaContribution" type="number" inputmode="decimal" min="1" step="0.01" placeholder="0.00">
+                        <button type="submit" class="full">Start chama</button>
+                        <p id="chamaMessage" class="message" role="status" aria-live="polite"></p>
+                    </form>
+                </div>
+                <section class="console" id="chamaDetail" aria-live="polite">
+                    <p class="hint" style="margin:0">Choose a chama to see its members, contributions and payouts.</p>
+                </section>
+            </div>
+        </section>
+
         <!-- ============================ SECURITY ============================ -->
         <section data-view-panel="security" hidden>
             <div class="page-head">
@@ -319,6 +389,56 @@
                             <li><span class="dot bad"></span><div><strong>High risk</strong><span>The money leaves your balance but is held. An analyst releases it or returns it to you.</span></div></li>
                         </ul>
                     </section>
+                    <section class="console" aria-labelledby="devicesHead">
+                        <div class="console-head"><span class="mono" id="devicesHead">Signed-in devices</span></div>
+                        <ul class="simple-list" id="deviceList"></ul>
+                        <button type="button" class="quiet small" id="signOutOthers" style="margin-top:14px">Sign out all other devices</button>
+                        <p id="deviceMessage" class="message" role="status" aria-live="polite"></p>
+                    </section>
+                    <section class="console" aria-labelledby="mfaHead">
+                        <div class="console-head"><span class="mono" id="mfaHead">Two-factor sign-in</span><span class="mono" id="mfaState"></span></div>
+                        <p class="hint" style="margin-top:0">Ask for a 6-digit code from an authenticator app (Google Authenticator, Microsoft Authenticator or Authy) as well as your password when you sign in.</p>
+                        <div id="mfaSetup" hidden>
+                            <img id="mfaQr" class="qr" alt="QR code to scan with your authenticator app">
+                            <p class="hint">Scan the code, or enter this key by hand: <code id="mfaSecret"></code></p>
+                            <label for="mfaEnablePassword">Account password</label>
+                            <input id="mfaEnablePassword" type="password" autocomplete="current-password">
+                            <label for="mfaEnableCode">Code from the app</label>
+                            <input id="mfaEnableCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="123456">
+                            <button type="button" id="mfaEnable" class="full">Turn on</button>
+                        </div>
+                        <div id="mfaDisableForm" hidden>
+                            <label for="mfaDisablePassword">Account password</label>
+                            <input id="mfaDisablePassword" type="password" autocomplete="current-password">
+                            <label for="mfaDisableCode">Code from the app</label>
+                            <input id="mfaDisableCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+                            <button type="button" id="mfaDisable" class="quiet full">Turn off</button>
+                        </div>
+                        <button type="button" id="mfaStart" class="full">Set up two-factor sign-in</button>
+                        <p id="mfaMessage" class="message" role="status" aria-live="polite"></p>
+                    </section>
+                    <form class="console" id="phoneForm" novalidate>
+                        <div class="console-head"><span class="mono">Mobile number</span><span class="mono" id="phoneState"></span></div>
+                        <p class="hint" style="margin-top:0">Lets people send you money by phone number, charges M-Pesa deposits to it, and lets you use SecureWallet by USSD on any phone.</p>
+                        <label for="phoneInput">Kenyan mobile number</label>
+                        <input id="phoneInput" inputmode="tel" autocomplete="tel" placeholder="0712345678">
+                        <label for="phonePassword">Account password</label>
+                        <input id="phonePassword" type="password" autocomplete="current-password">
+                        <button type="submit" class="full">Save number</button>
+                        <p id="phoneMessage" class="message" role="status" aria-live="polite"></p>
+                    </form>
+                    <section class="console danger-zone" aria-labelledby="freezeHead">
+                        <div class="console-head"><span class="mono" id="freezeHead">Freeze my account</span></div>
+                        <p class="hint" style="margin-top:0">Lost your phone, or think someone knows your PIN? Freezing stops all money leaving your account and cancels payments that are waiting. Support restores it once you are safe.</p>
+                        <button type="button" class="danger full" id="freezeButton">Freeze my account now</button>
+                        <p id="freezeMessage" class="message" role="status" aria-live="polite"></p>
+                    </section>
+                    <section class="console" aria-labelledby="privacyHead">
+                        <div class="console-head"><span class="mono" id="privacyHead">Your data</span></div>
+                        <p class="hint" style="margin-top:0">Download a copy of the personal data SecureWallet holds about you, as the Kenya Data Protection Act, 2019 allows.</p>
+                        <button type="button" class="quiet full" id="exportButton">Download my data</button>
+                        <p class="hint">Helping us test? <a href="survey.html">Rate SecureWallet</a> in a 10-question survey.</p>
+                    </section>
                     <section class="console">
                         <div class="console-head"><span class="mono">What is checked</span></div>
                         <p style="margin:0" class="hint">Each transfer, withdrawal and bank transfer is scored by the fraud model and compared with your own history: how often you are paying, how the amount compares with your usual payments, whether you have paid this person before, and whether the money is being passed quickly between accounts.</p>
@@ -333,6 +453,7 @@
         <a href="#savings" data-view="savings"><span class="action-icon" data-icon="savings"></span>Savings</a>
         <a href="#loans" data-view="loans"><span class="action-icon" data-icon="loan"></span>Loans</a>
         <a href="#requests" data-view="requests"><span class="action-icon" data-icon="request"></span>Requests</a>
+        <a href="#chamas" data-view="chamas"><span class="action-icon" data-icon="chama"></span>Chamas</a>
         <a href="#security" data-view="security"><span class="action-icon" data-icon="shield"></span>Security</a>
     </nav>
 
@@ -345,6 +466,7 @@
             <div class="receipt-amount" id="receiptAmount"></div>
             <div class="receipt-title" id="receiptTitle"></div>
             <dl id="receiptRows"></dl>
+            <div id="receiptExtra" class="receipt-extra"></div>
             <p class="receipt-foot mono">A Webmasters project &middot; simulated, no real money moved</p>
             <div class="actions">
                 <button id="receiptPrint" class="quiet" type="button">Print</button>
@@ -353,7 +475,39 @@
         </div>
     </dialog>
 
+    <dialog id="mpesaDialog" aria-labelledby="mpesaTitle">
+        <form id="mpesaForm" class="receipt" novalidate>
+            <div class="console-head"><span class="mono">Deposit with M-Pesa</span><span class="mono" id="mpesaMode"></span></div>
+            <h3 id="mpesaTitle" style="margin:6px 0 4px">Top up from M-Pesa</h3>
+            <p class="hint" style="margin-top:0">We send a payment prompt to your phone. Enter your M-Pesa PIN there to finish.</p>
+            <label for="mpesaPhone">M-Pesa number</label>
+            <input id="mpesaPhone" inputmode="tel" placeholder="0712345678">
+            <label for="mpesaAmount">Amount (whole shillings)</label>
+            <input id="mpesaAmount" type="number" inputmode="numeric" min="1" step="1" placeholder="0">
+            <p id="mpesaMessage" class="message" role="status" aria-live="polite"></p>
+            <div class="actions">
+                <button type="button" class="quiet" id="mpesaClose">Close</button>
+                <button type="submit" id="mpesaSend">Send prompt</button>
+            </div>
+        </form>
+        <div id="mpesaPhoneMock" class="phone-mock" hidden>
+            <div class="phone-screen">
+                <span class="phone-carrier">Safaricom</span>
+                <p id="mpesaPrompt"></p>
+                <label for="mpesaPinMock" class="visually-hidden">M-Pesa PIN</label>
+                <input id="mpesaPinMock" type="password" inputmode="numeric" maxlength="4" placeholder="Enter M-PESA PIN">
+                <div class="phone-buttons">
+                    <button type="button" class="quiet small" id="mpesaCancelMock">Cancel</button>
+                    <button type="button" class="small" id="mpesaPayMock">Send</button>
+                </div>
+            </div>
+            <p class="hint">Simulated phone: no real M-Pesa account is charged.</p>
+        </div>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite"><span class="toast-icon" aria-hidden="true">&#10003;</span><div><strong id="toastTitle"></strong><span class="mono" id="toastDetail"></span></div></div>
+    <script src="i18n.js"></script>
     <script src="app.js"></script>
+    <script src="dashboard-v3.js"></script>
 </body>
 </html>

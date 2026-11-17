@@ -1,4 +1,6 @@
-# The risk engine (version 2)
+# The risk engine (versions 2 and 3)
+
+Version 2 added the risk engine; version 3 adds device, scam and crowd-report signals, the scam check with cooling-off, disputes, the money-flow network, a retry queue for unscored payments, and a feedback loop that retrains the model from analysts' decisions with shadow scoring and drift monitoring. The version 3 parts are marked below.
 
 ## Why it exists
 
@@ -26,8 +28,12 @@ Every transfer, withdrawal and bank transfer is assessed before any money moves.
 | Pass-through | The amount is at least 80% of the money received from other users in the last 15 minutes | 0.40 |
 | Fan-in | The recipient has little history but has been paid by 3 or more other accounts in the last hour | 0.45 |
 | Round trip | The recipient sent a similar amount to the sender in the last 24 hours | 0.30 |
+| New device (v3) | The payment comes from a device first used on the account in the last 24 hours | 0.25 |
+| New device, new payee (v3) | As above, and the recipient was never paid before that device appeared | 0.35 |
+| Reported recipient (v3) | One user has reported the recipient (three or more; fraud confirmed on a payment to them) | 0.20 (0.40; 0.50) |
+| Scam purpose (v3) | The sender says the payment is for something that matches a common scam (see below) | 0.30 |
 
-The last three are network signals: they look at how money moves between accounts, which is how money-mule activity shows up.
+Pass-through, fan-in and round trip are network signals: they look at how money moves between accounts, which is how money-mule activity shows up. The two device signals target account takeover, where a stolen password is used from the attacker's own device, usually within hours. Reports come from users (below), so the system learns about a mule account from the people who dealt with it.
 
 ### Combining
 
@@ -47,7 +53,39 @@ Each signal can only raise the risk, the result stays between 0 and 1, and with 
 
 The mode is set by `RISK_MODE` in `.env`. Advisory mode behaves as version 1 did, except that the alert decision uses the risk score rather than the model score alone.
 
-If the scoring service is unreachable the transaction is recorded as unscored, as in version 1, and the signals alone decide the risk.
+If the scoring service is unreachable the transaction is recorded as unscored, as in version 1, and the signals alone decide the risk. Version 3 adds a retry queue (`src/services/scoringQueue.js`): every 30 seconds it scores unscored payments with the features recorded when they were made, and a payment that turns out risky raises a late alert for an analyst (test case TC-59).
+
+## Scam protection (version 3)
+
+Account takeover is only one kind of fraud. In authorised push-payment scams the real account owner sends the money, after being persuaded by a caller, a fake investment or a fake job offer, so a model that asks "is this the account owner?" sees nothing wrong. Version 3 adds defences aimed at the victim's decision rather than the attacker's access.
+
+**Scam check.** In enforce mode, a first transfer of `SCAM_CHECK_MIN` (KES 1,000) or more to someone asks the sender what it is for before anything is assessed (HTTP 428 with `challenge: "purpose"`). Four of the eight answers match common scam patterns: someone called or messaged and asked me to pay; an investment or trading opportunity; a fee to get a job, prize or loan; returning money someone says they sent by mistake. Choosing one shows a warning written for that scam and adds the scam-purpose signal.
+
+**Cooling-off.** A payment with a risky purpose is not sent at once. The money leaves the sender's wallet into a held account, the sender sees a countdown, and the payment is released after `COOLING_OFF_MINUTES` (30) unless the sender cancels it, which returns the money in full. The pause gives a victim time to call someone, which is when most scams fall apart. A background task releases due payments every 15 seconds. Test cases TC-47 and TC-48 cover both outcomes.
+
+**Confirmation of payee and warnings.** The recipient's registered name is shown before every transfer (version 2). In version 3 the check also warns when other users have reported the account.
+
+**"This wasn't me" and recipient reports.** From the receipt of any payment, the sender can dispute it. A dispute freezes the account straight away, in case it has been taken over, and goes to an analyst. Upholding it recovers what the recipient still holds and freezes the recipient's account; the user's account is restored once they are back in control. A user can also report an account they have dealt with; reports feed the reported-recipient signal and the payee warning. Only someone who has exchanged money with an account can report it, and only once, so reports cannot be used to attack an innocent account. Test cases TC-49 and TC-51 cover these.
+
+**Self-freeze.** A user who loses their phone can freeze their own account from **Security**; only an administrator can lift it.
+
+## The money-flow network (version 3)
+
+The console's **Network** page draws the transfers around any account, two or three hops out (`src/services/graph.js`), with flagged and held payments marked, and lists the accounts whose recent flows look most like mule activity: money passed straight on, many senders paying one new account, money going round in a cycle. The network signals above look one step around a single payment; this view lets an analyst follow the chain.
+
+## Learning from decisions (version 3)
+
+The model was trained once on PaySim. Version 3 closes the loop between the analysts and the model (`src/services/modelOps.js` and the scoring service's `/models` endpoints).
+
+1. **Labels.** Every decision becomes a labelled example: a confirmed alert or an upheld dispute is fraud; a cleared alert or a rejected dispute is legitimate; fraud API clients send their own labels.
+2. **Retraining.** From the console's **Models** page an administrator retrains. The scoring service trains a challenger on PaySim plus the live examples, weighted twenty times each because they are few and closest to real use, with the same parameters and seed as the original. When each class has at least five live examples, 30% of them are held back to compare the challenger and the champion on live data as well as on the PaySim test set.
+3. **Shadow scoring.** While a challenger exists, every payment is also scored by it, but only the champion's score counts. The Models page compares the two on recent payments and on labelled ones.
+4. **Promotion and rollback.** The administrator promotes the challenger when it does better; the previous champion is archived and can be restored with one click. Every change is written to the audit log, and every assessment records the model version that made it.
+5. **Drift.** The page measures, for each model feature, how far recent live payments have moved from the training data, using the population stability index (PSI): the training distribution is stored as ten quantile bins (with a separate bin for exact zeros, which are common in balances), and PSI = Σ (live share − training share) × ln(live share / training share). By the usual rule of thumb, below 0.1 is stable, 0.1 to 0.25 a moderate shift and above 0.25 a major one.
+
+In this wallet every feature shows major drift, and that is a finding rather than a fault: PaySim's amounts and balances are on a different scale from a test wallet's KES amounts, and PaySim's `balance_discrepancy` is often non-zero where the wallet's ledger keeps it at zero. It is the evidence for why the behavioural signals and the feedback loop are needed alongside the original model. Test cases TC-57 and TC-58 cover retraining, shadow scoring and drift.
+
+The scoring service keeps its models in `MODEL_DIR` (in Docker, a volume), so promoted models survive a restart. Its administration endpoints accept a request only with the shared `ML_ADMIN_TOKEN`, or from the same machine when no token is set.
 
 ## Explanations
 
@@ -72,3 +110,5 @@ Payments are processed one at a time for each sender. Without this, payments sen
 - The network signals look one step around a transaction. They are not a full graph analysis and would miss longer or slower chains.
 - A 4-digit PIN protects against someone who has the session or the password but not the PIN: setting a first PIN needs the password, and changing it needs the current PIN as well. It is not a second device factor, there is no way to reset a forgotten PIN, and the lock allows five attempts every 15 minutes without growing longer.
 - The one-at-a-time queue and the sign-in rate limit live in the web process, so they assume the single-process deployment described in `docs/DEPLOYMENT.md`.
+- The version 3 weights (device, reports, purpose) were also set by hand. The scam check relies on the sender answering honestly; a victim being coached by a scammer may pick an ordinary purpose, which is why the cooling-off and dispute paths exist as well.
+- Retraining on a handful of live labels changes the model little and can over-fit them; the hold-out comparison is reported so an administrator can see this, and promotion is always a human decision.

@@ -4,6 +4,9 @@ const db = require('../config/db');
 
 const { amountError } = require('../services/ledger');
 const payments = require('../services/payments');
+const journal = require('../services/journal');
+const devices = require('../services/devices');
+const protection = require('../services/protection');
 
 
 // ==================================================
@@ -115,6 +118,12 @@ async function deposit(req, res) {
                 ]
             );
 
+            await journal.post(connection, {
+                kind: 'deposit',
+                transactionId: result.insertId,
+                lines: [[journal.account.external('cash'), -amount], [journal.account.wallet(wallet.id), amount]],
+            });
+
             await connection.commit();
         } catch (depositError) {
             await connection.rollback();
@@ -153,11 +162,12 @@ async function withdraw(req, res) {
     if (!req.session.userId) {
         return res.status(401).json({ message: 'Authentication required' });
     }
-    return payments.respond(res, () => payments.execute({
+    return payments.respond(res, async () => payments.execute({
         userId: req.session.userId,
         kind: 'withdrawal',
         amount: req.body.amount,
         pin: req.body.pin,
+        context: { newDevice: await devices.isNewDevice(req), channel: 'web' },
     }));
 }
 
@@ -165,12 +175,14 @@ async function transfer(req, res) {
     if (!req.session.userId) {
         return res.status(401).json({ message: 'Authentication required' });
     }
-    return payments.respond(res, () => payments.execute({
+    return payments.respond(res, async () => payments.execute({
         userId: req.session.userId,
         kind: 'transfer',
         amount: req.body.amount,
         recipientEmail: req.body.recipientEmail,
         pin: req.body.pin,
+        purpose: req.body.purpose,
+        context: { newDevice: await devices.isNewDevice(req), channel: 'web' },
         // Set when the transfer pays a money request, so that if the
         // transfer is held the request is settled when it is released.
         details: Number.isInteger(req.body.requestId) && req.body.requestId > 0
@@ -187,7 +199,7 @@ async function lookupRecipient(req, res) {
         if (!email) {
             return res.status(400).json({ message: 'Email is required' });
         }
-        const recipient = await userModel.findUserByEmail(email);
+        const recipient = await payments.findRecipient(email);
         if (!recipient || String(recipient.id) === String(req.session.userId)) {
             return res.status(404).json({ message: 'Recipient not found' });
         }
@@ -205,6 +217,9 @@ async function lookupRecipient(req, res) {
             name: recipient.name,
             email: recipient.email,
             paidBefore: Number(paid[0].n) > 0,
+            // Shown before sending when other users have reported the
+            // account or fraud has been confirmed on payments to it.
+            warning: await protection.payeeWarning(recipient.id),
         });
     } catch (error) {
         console.error('[WalletController] Recipient lookup error:', error);
@@ -289,7 +304,8 @@ async function getHistory(req, res) {
             // savings and loan movements are recorded without a score.
             const scoredTypes = ['transfer', 'withdrawal', 'bank_transfer'];
             const details = {};
-            ['vault_name', 'bank', 'account_masked', 'kind', 'number', 'account', 'loan_id', 'fee']
+            ['vault_name', 'bank', 'account_masked', 'kind', 'number', 'account', 'loan_id', 'fee',
+                'receipt', 'chama_name', 'chama_id', 'channel', 'original_transaction_id']
                 .forEach(key => { if (meta && meta[key] !== undefined) details[key] = meta[key]; });
             if (Object.keys(details).length) item.details = details;
 
@@ -297,17 +313,34 @@ async function getHistory(req, res) {
             if (tx.direction === 'out' && meta && meta.risk && meta.risk.action) {
                 item.risk_action = meta.risk.action;
             }
+            // Version 3: cooling-off time and the stated purpose, for the sender.
+            if (tx.direction === 'out' && meta && meta.cooling_until) item.cooling_until = meta.cooling_until;
+            if (tx.direction === 'out' && meta && meta.purpose) item.purpose = meta.purpose.label;
 
+            // In enforce mode the risk score is not shown: a sender who could
+            // see it could learn how close a payment comes to the thresholds
+            // for a PIN check or a hold. Advisory mode shows it, as in version 1.
             if (tx.direction === 'out' && scoredTypes.includes(item.type)) {
                 item.fraud_check = {
                     scoring_status: tx.scoring_status,
-                    fraud_score: tx.fraud_score === null ? null : Number(tx.fraud_score),
                     alert_status: tx.alert_status || null,
                 };
+                if (process.env.RISK_MODE !== 'enforce') {
+                    item.fraud_check.fraud_score = tx.fraud_score === null ? null : Number(tx.fraud_score);
+                }
             }
 
             return item;
         });
+
+        // Version 3: which of the user's own payments they have disputed.
+        const outgoing = visible.filter(t => t.direction === 'out').map(t => t.id);
+        if (outgoing.length) {
+            const [disputed] = await db.query(
+                'SELECT transaction_id, status FROM disputes WHERE transaction_id IN (?)', [outgoing]);
+            const byTx = new Map(disputed.map(d => [Number(d.transaction_id), d.status]));
+            visible.forEach(t => { if (byTx.has(Number(t.id))) t.dispute = byTx.get(Number(t.id)); });
+        }
 
         return res.status(200).json({
             page,

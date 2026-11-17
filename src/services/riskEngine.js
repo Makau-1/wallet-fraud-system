@@ -1,4 +1,4 @@
-// Risk engine (version 2).
+// Risk engine (versions 2 and 3).
 //
 // The machine learning model scores one transaction from its amount and
 // balances. That is not enough on its own in a live wallet: the model's
@@ -7,14 +7,20 @@
 // normally behaves or how money is moving between accounts.
 //
 // This engine adds that context. It reads behavioural and network signals
-// from the wallet's own transaction history, combines them with the model
-// score into one risk score, and maps the score to a response tier.
+// from a transaction history, combines them with the model score into one
+// risk score, and maps the score to a response tier.
 //
 //   risk = 1 - (1 - model score) x (1 - w1) x (1 - w2) ...
 //
 // Each signal can only raise the risk, the result stays between 0 and 1,
-// and every contributing signal is recorded with the transaction so the
-// analyst sees exactly why it was raised.
+// and every contributing signal is recorded so the analyst sees exactly why
+// it was raised.
+//
+// Version 3: the history is read through a provider, so the same signals
+// run on the wallet's own transactions (walletHistory) and on the events
+// that clients of the fraud API send (apiHistory in services/fraudApi.js).
+// Callers can add their own signals, such as a new device or a recipient
+// other users have reported.
 
 const db = require('../config/db');
 const { scoreTransaction } = require('./fraudService');
@@ -39,38 +45,68 @@ function median(values) {
     return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+function combine(base, signals) {
+    return 1 - signals.reduce((keep, signal) => keep * (1 - signal.weight), 1 - base);
+}
+
 const SCORED_TYPES = "('transfer', 'withdrawal', 'bank_transfer')";
 const TYPE = "JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.type'))";
 
+// History provider for the wallet: reads the transactions table.
+function walletHistory(senderWalletId, receiverWalletId) {
+    const one = async (sql, params) => Number((await db.execute(sql, params))[0][0].n);
+    return {
+        outgoingCountSince: minutes => one(
+            `SELECT COUNT(*) AS n FROM transactions
+             WHERE sender_wallet_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
+               AND ${TYPE} IN ${SCORED_TYPES}`, [senderWalletId, minutes]),
+        recentOutgoingAmounts: async limit => (await db.execute(
+            `SELECT amount FROM transactions
+             WHERE sender_wallet_id = ? AND status = 'completed' AND ${TYPE} IN ${SCORED_TYPES}
+             ORDER BY id DESC LIMIT ${Number(limit)}`, [senderWalletId]))[0].map(r => Number(r.amount)),
+        paidBefore: () => one(
+            `SELECT COUNT(*) AS n FROM transactions
+             WHERE sender_wallet_id = ? AND receiver_wallet_id = ? AND status = 'completed'`,
+            [senderWalletId, receiverWalletId]),
+        toCounterpartySince: minutes => one(
+            `SELECT COUNT(*) AS n FROM transactions
+             WHERE sender_wallet_id = ? AND receiver_wallet_id = ?
+               AND created_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE)`, [senderWalletId, receiverWalletId, minutes]),
+        inflowSince: async minutes => Number((await db.execute(
+            `SELECT COALESCE(SUM(amount), 0) AS total FROM transactions
+             WHERE receiver_wallet_id = ? AND sender_wallet_id IS NOT NULL AND status = 'completed'
+               AND created_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE)`, [senderWalletId, minutes]))[0][0].total),
+        counterpartySendersSince: minutes => one(
+            `SELECT COUNT(DISTINCT sender_wallet_id) AS n FROM transactions
+             WHERE receiver_wallet_id = ? AND sender_wallet_id IS NOT NULL AND sender_wallet_id <> ?
+               AND created_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE)`, [receiverWalletId, senderWalletId, minutes]),
+        counterpartySendersBefore: minutes => one(
+            `SELECT COUNT(DISTINCT sender_wallet_id) AS n FROM transactions
+             WHERE receiver_wallet_id = ? AND sender_wallet_id IS NOT NULL
+               AND created_at < DATE_SUB(NOW(), INTERVAL ? MINUTE)`, [receiverWalletId, minutes]),
+        returnedSince: (hours, low, high) => one(
+            `SELECT COUNT(*) AS n FROM transactions
+             WHERE sender_wallet_id = ? AND receiver_wallet_id = ?
+               AND created_at >= DATE_SUB(NOW(), INTERVAL ? HOUR) AND amount BETWEEN ? AND ?`,
+            [receiverWalletId, senderWalletId, hours, low, high]),
+    };
+}
+
 // Behavioural signals: how this transaction compares with the sender's own
 // recent activity.
-async function behaviouralSignals({ senderWalletId, receiverWalletId, amount }) {
+async function behaviouralSignals(history, { amount, hasCounterparty }) {
     const signals = [];
 
-    // Outgoing scored transactions in the last 10 minutes.
-    const [velocityRows] = await db.execute(
-        `SELECT COUNT(*) AS n FROM transactions
-         WHERE sender_wallet_id = ?
-           AND created_at >= DATE_SUB(NOW(), INTERVAL 10 MINUTE)
-           AND ${TYPE} IN ${SCORED_TYPES}`,
-        [senderWalletId]
-    );
-    const recent = Number(velocityRows[0].n);
+    const recent = await history.outgoingCountSince(10);
     if (recent >= 6) {
         signals.push({ key: 'velocity', weight: 0.35, label: `${recent} payments out in the last 10 minutes` });
     } else if (recent >= 3) {
         signals.push({ key: 'velocity', weight: 0.2, label: `${recent} payments out in the last 10 minutes` });
     }
 
-    // Amount compared with the sender's usual outgoing amount.
-    const [amountRows] = await db.execute(
-        `SELECT amount FROM transactions
-         WHERE sender_wallet_id = ? AND status = 'completed' AND ${TYPE} IN ${SCORED_TYPES}
-         ORDER BY id DESC LIMIT 50`,
-        [senderWalletId]
-    );
-    if (amountRows.length >= 5) {
-        const usual = median(amountRows.map(row => Number(row.amount)));
+    const amounts = await history.recentOutgoingAmounts(50);
+    if (amounts.length >= 5) {
+        const usual = median(amounts);
         const ratio = usual > 0 ? amount / usual : 0;
         if (ratio >= 10) {
             signals.push({ key: 'amount_anomaly', weight: 0.4, label: `Amount is ${Math.round(ratio)} times the sender's usual payment` });
@@ -79,120 +115,75 @@ async function behaviouralSignals({ senderWalletId, receiverWalletId, amount }) 
         }
     }
 
-    // First payment to this recipient.
-    if (receiverWalletId) {
-        const [knownRows] = await db.execute(
-            `SELECT COUNT(*) AS n FROM transactions
-             WHERE sender_wallet_id = ? AND receiver_wallet_id = ? AND status = 'completed'`,
-            [senderWalletId, receiverWalletId]
-        );
-        if (Number(knownRows[0].n) === 0) {
+    if (hasCounterparty) {
+        if (await history.paidBefore() === 0) {
             signals.push({ key: 'new_recipient', weight: 0.15, label: 'First payment to this recipient' });
         }
-
         // Split payments: one sum sent to the same person in several small
         // parts, so that no single payment looks large.
-        const [splitRows] = await db.execute(
-            `SELECT COUNT(*) AS n FROM transactions
-             WHERE sender_wallet_id = ? AND receiver_wallet_id = ?
-               AND created_at >= DATE_SUB(NOW(), INTERVAL 10 MINUTE)`,
-            [senderWalletId, receiverWalletId]
-        );
-        const parts = Number(splitRows[0].n);
+        const parts = await history.toCounterpartySince(10);
         if (parts >= 3) {
             signals.push({ key: 'split_payments', weight: 0.35, label: `${parts} payments to this recipient in the last 10 minutes` });
         }
     }
-
     return signals;
 }
 
 // Network signals: how money is moving between accounts around this
 // transaction. These are the patterns of money-mule activity.
-async function networkSignals({ senderWalletId, receiverWalletId, amount }) {
+async function networkSignals(history, { amount, hasCounterparty }) {
     const signals = [];
 
-    // Pass-through: money received from other users minutes ago is being
-    // sent straight on.
-    const [inflowRows] = await db.execute(
-        `SELECT COALESCE(SUM(amount), 0) AS total FROM transactions
-         WHERE receiver_wallet_id = ? AND sender_wallet_id IS NOT NULL
-           AND status = 'completed'
-           AND created_at >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)`,
-        [senderWalletId]
-    );
-    const justReceived = Number(inflowRows[0].total);
+    const justReceived = await history.inflowSince(15);
     if (justReceived > 0 && amount >= 0.8 * justReceived) {
         signals.push({ key: 'pass_through', weight: 0.4, label: 'Money received in the last 15 minutes is being passed straight on' });
     }
 
-    if (receiverWalletId) {
-        // Fan-in: the recipient is collecting from several senders.
-        const [fanRows] = await db.execute(
-            `SELECT COUNT(DISTINCT sender_wallet_id) AS n FROM transactions
-             WHERE receiver_wallet_id = ? AND sender_wallet_id IS NOT NULL
-               AND sender_wallet_id <> ?
-               AND created_at >= DATE_SUB(NOW(), INTERVAL 60 MINUTE)`,
-            [receiverWalletId, senderWalletId]
-        );
-        const senders = Number(fanRows[0].n);
+    if (hasCounterparty) {
+        const senders = await history.counterpartySendersSince(60);
         if (senders >= 3) {
             // An established account, such as a landlord or a shop, is paid
             // by many people as a matter of course. The signal is for an
             // account with little history that suddenly starts collecting.
-            const [pastRows] = await db.execute(
-                `SELECT COUNT(DISTINCT sender_wallet_id) AS n FROM transactions
-                 WHERE receiver_wallet_id = ? AND sender_wallet_id IS NOT NULL
-                   AND created_at < DATE_SUB(NOW(), INTERVAL 60 MINUTE)`,
-                [receiverWalletId]
-            );
-            if (Number(pastRows[0].n) < 3) {
+            if (await history.counterpartySendersBefore(60) < 3) {
                 signals.push({ key: 'fan_in', weight: 0.45, label: `Recipient has little history but has collected from ${senders} other accounts in the last hour` });
             }
         }
-
-        // Round trip: the recipient sent a similar amount to the sender in
-        // the last day, so the money is going in a circle.
-        const [cycleRows] = await db.execute(
-            `SELECT COUNT(*) AS n FROM transactions
-             WHERE sender_wallet_id = ? AND receiver_wallet_id = ?
-               AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
-               AND amount BETWEEN ? AND ?`,
-            [receiverWalletId, senderWalletId, amount * 0.8, amount * 1.2]
-        );
-        if (Number(cycleRows[0].n) > 0) {
+        if (await history.returnedSince(24, amount * 0.8, amount * 1.2) > 0) {
             signals.push({ key: 'round_trip', weight: 0.3, label: 'A similar amount came from this recipient in the last 24 hours' });
         }
     }
-
     return signals;
 }
 
-// Assesses one outgoing transaction before it is committed.
-//   type: 'TRANSFER' or 'CASH_OUT' for the model
-//   balances are the current ones; the after-balances are projected.
-async function assess({ modelType, amount, senderWalletId, receiverWalletId, senderBefore, receiverBefore }) {
+// Scores and assesses one outgoing transaction before it is committed.
+//   modelType: 'TRANSFER' or 'CASH_OUT'
+//   history:   a provider such as walletHistory(...)
+//   extraSignals: signals the caller already knows (device, reports, purpose)
+async function assessWith({ modelType, amount, senderBefore, receiverBefore, hasCounterparty, history, extraSignals = [] }) {
+    const features = {
+        type: modelType,
+        amount,
+        oldbalanceOrg: senderBefore,
+        newbalanceOrig: Math.round((senderBefore - amount) * 100) / 100,
+        oldbalanceDest: hasCounterparty ? receiverBefore : 0,
+        newbalanceDest: hasCounterparty ? Math.round((receiverBefore + amount) * 100) / 100 : 0,
+    };
     const [model, behaviour, network] = await Promise.all([
-        scoreTransaction({
-            type: modelType,
-            amount,
-            oldbalanceOrg: senderBefore,
-            newbalanceOrig: Math.round((senderBefore - amount) * 100) / 100,
-            oldbalanceDest: receiverWalletId ? receiverBefore : 0,
-            newbalanceDest: receiverWalletId ? Math.round((receiverBefore + amount) * 100) / 100 : 0,
-        }),
-        behaviouralSignals({ senderWalletId, receiverWalletId, amount }),
-        networkSignals({ senderWalletId, receiverWalletId, amount }),
+        scoreTransaction(features),
+        behaviouralSignals(history, { amount, hasCounterparty }),
+        networkSignals(history, { amount, hasCounterparty }),
     ]);
 
-    const signals = [...behaviour, ...network];
+    const signals = [...behaviour, ...network, ...extraSignals];
 
     // If the model is unavailable the transaction is recorded as unscored,
     // as in version 1, and is never blocked for that reason alone. The
-    // behavioural and network signals do not need the model, so they still
-    // apply: the wallet keeps some protection while the model is down.
+    // signals do not need the model, so they still apply: the wallet keeps
+    // some protection while the model is down. The retry queue scores the
+    // transaction later (services/scoringQueue.js).
     if (!model) {
-        const signalRisk = 1 - signals.reduce((keep, signal) => keep * (1 - signal.weight), 1);
+        const signalRisk = combine(0, signals);
         return {
             scored: false,
             modelScore: null,
@@ -201,12 +192,15 @@ async function assess({ modelType, amount, senderWalletId, receiverWalletId, sen
             signals,
             contributions: [],
             baseValue: null,
+            modelVersion: null,
+            shadow: null,
+            features,
             mode: mode(),
         };
     }
 
     const modelScore = Math.min(1, Math.max(0, model.fraud_score));
-    const risk = 1 - signals.reduce((keep, signal) => keep * (1 - signal.weight), 1 - modelScore);
+    const risk = combine(modelScore, signals);
 
     return {
         scored: true,
@@ -216,8 +210,29 @@ async function assess({ modelType, amount, senderWalletId, receiverWalletId, sen
         signals,
         contributions: Array.isArray(model.contributions) ? model.contributions : [],
         baseValue: typeof model.base_value === 'number' ? model.base_value : null,
+        modelVersion: model.model_version || null,
+        // The challenger model's score, when one is being tried in shadow.
+        shadow: model.shadow && typeof model.shadow.fraud_score === 'number'
+            ? { score: Math.round(model.shadow.fraud_score * 1e6) / 1e6, version: model.shadow.model_version || null }
+            : null,
+        features,
         mode: mode(),
     };
 }
 
-module.exports = { assess, mode, tierFor, ALERT_THRESHOLD, HOLD_THRESHOLD };
+// The wallet's assessment (unchanged interface from version 2).
+async function assess({ modelType, amount, senderWalletId, receiverWalletId, senderBefore, receiverBefore, extraSignals = [] }) {
+    return assessWith({
+        modelType,
+        amount,
+        senderBefore,
+        receiverBefore,
+        hasCounterparty: Boolean(receiverWalletId),
+        history: walletHistory(senderWalletId, receiverWalletId),
+        extraSignals,
+    });
+}
+
+module.exports = {
+    assess, assessWith, walletHistory, combine, mode, tierFor, ALERT_THRESHOLD, HOLD_THRESHOLD,
+};

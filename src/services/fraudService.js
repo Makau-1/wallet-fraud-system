@@ -15,6 +15,7 @@ async function scoreTransaction(payload) {
         payload.type
     );
 
+    const started = Date.now();
     try {
         const response = await fetch(`${ML_URL}/score`, {
             method: 'POST',
@@ -43,6 +44,7 @@ async function scoreTransaction(payload) {
         }
 
         const result = await response.json();
+        require('./metrics').observe('model_score_ms', Date.now() - started);
 
         if (
             typeof result.fraud_score !== 'number' ||
@@ -68,6 +70,7 @@ async function scoreTransaction(payload) {
 
         return result;
     } catch (error) {
+        require('./metrics').count('model_unavailable');
         console.error(
             '[FraudService] FastAPI request failed:',
             error.message,

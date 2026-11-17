@@ -1,0 +1,216 @@
+{
+  "run": "2026-11-17 11:39:40",
+  "base": "http://localhost:3000",
+  "status": {
+    "wallet": "operational",
+    "database": "operational",
+    "scoring": "operational",
+    "riskMode": "advisory",
+    "attackLab": true,
+    "mpesaMode": "simulator",
+    "ussdSimulator": true,
+    "checked_at": "2026-11-17T11:39:21.378Z"
+  },
+  "results": [
+    {
+      "id": "TC-41",
+      "requirement": "FR-24",
+      "description": "Every money movement is a balanced, append-only journal entry",
+      "expected": "Deposit, transfer and withdrawal each post entries whose lines add up to zero; wallet balance equals its journal account; the database refuses to change a journal line",
+      "actual": "2 entries, balanced: true; wallet 4500 vs journal 4500.00; update refused: true",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-42",
+      "requirement": "NFR-07",
+      "description": "Hash-chained audit log",
+      "expected": "An administrator decision is written to the audit log; the chain verifies; the database refuses to delete a record",
+      "actual": "Alert 193 decided HTTP 200; audit records 1; chain verified: true (1034 records); delete refused: true",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-43",
+      "requirement": "NFR-08",
+      "description": "Idempotency keys stop a retried payment applying twice",
+      "expected": "The same key twice moves the money once and replays the first response; the key with a different request is refused",
+      "actual": "First HTTP 200 #7586; repeat HTTP 200 #7586, replayed: true; different body HTTP 422; balance 850",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-44",
+      "requirement": "FR-25",
+      "description": "Live notification when money arrives",
+      "expected": "The recipient's open page receives a notification event as soon as a transfer completes, and it is stored",
+      "actual": "Event: \"You received KES 120.00\"; stored, unread 1",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-45",
+      "requirement": "FR-26",
+      "description": "Sign-in from a new device",
+      "expected": "The user is notified; payments from that device carry a new-device risk signal",
+      "actual": "Flagged as new device: true; notification \"New sign-in from Script on an unknown system\"; payment HTTP 200 with new-device signal: true; devices listed 2",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-46",
+      "requirement": "NFR-09",
+      "description": "Two-factor sign-in",
+      "expected": "After setting up an authenticator, sign-in needs a code: a wrong code is refused, the right one signs in, and a used code cannot be replayed",
+      "actual": "Set-up QR: true; enable HTTP 200; password step HTTP 202; wrong code HTTP 401; right code HTTP 200; replayed code HTTP 401",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-47",
+      "requirement": "FR-27",
+      "description": "Scam check and cooling-off",
+      "expected": "A first transfer of KES 1,000 or more asks what it is for; an ordinary purpose sends it; a scam-pattern purpose holds it for a cooling-off period, during which the sender can cancel and get the money back",
+      "actual": "Not run: needs RISK_MODE=enforce",
+      "status": "Not run"
+    },
+    {
+      "id": "TC-48",
+      "requirement": "FR-27",
+      "description": "Cooling-off payment is sent when the period ends",
+      "expected": "Once the cooling-off time has passed, the payment is released to the recipient and the journal balances",
+      "actual": "Not run: needs RISK_MODE=enforce",
+      "status": "Not run"
+    },
+    {
+      "id": "TC-49",
+      "requirement": "FR-28",
+      "description": "\"This wasn't me\" dispute, clawback and restore",
+      "expected": "Disputing a payment freezes the account; upholding recovers what the recipient still holds and freezes the recipient; restoring lets the user pay again",
+      "actual": "Dispute HTTP 201; withdrawal while frozen HTTP 423; upheld HTTP 200, recovered 900; recipient frozen: true; restore HTTP 200; withdrawal after HTTP 200; balance 3990",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-50",
+      "requirement": "NFR-10",
+      "description": "Two-person approval for large held payments",
+      "expected": "Deciding a held payment of KES 10,000 or more needs two different administrators; the money moves only on the second approval",
+      "actual": "Not run: needs RISK_MODE=enforce",
+      "status": "Not run"
+    },
+    {
+      "id": "TC-51",
+      "requirement": "FR-29",
+      "description": "Reporting an account warns other payers",
+      "expected": "Only someone who has dealt with an account can report it; others then see a warning on the payee check; a second report by the same person is refused",
+      "actual": "Report HTTP 201; repeat HTTP 409; from a stranger HTTP 403; payee warning: \"Another SecureWallet user has reported this account. Check who you are paying before you continue.\"",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-52",
+      "requirement": "FR-30",
+      "description": "Send money to a phone number",
+      "expected": "A user links a Kenyan number (password needed); another user finds and pays them by that number",
+      "actual": "Wrong password HTTP 403; linked 254779415080; lookup finds phoneb Test; payment HTTP 200",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-53",
+      "requirement": "FR-31",
+      "description": "M-Pesa deposit by STK push (simulator)",
+      "expected": "Accepting the phone prompt credits the wallet once, from external:mpesa in the journal; cancelling credits nothing; a callback with a wrong token is ignored",
+      "actual": "STK HTTP 201 (ws_CO_261117143932413490747); paid: success, receipt S86D50CCC1; repeat callback still one credit; cancelled: failed (1032); balance 750; forged callback HTTP 404",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-54",
+      "requirement": "FR-32",
+      "description": "USSD menu for feature phones",
+      "expected": "The simulator refuses anyone not signed in and dials from their own number; balance needs the PIN; sending shows the recipient's registered name before the PIN and completes; the language switches to Swahili",
+      "actual": "Without signing in: HTTP 401; menu \"CON Welcome to SecureWallet\"; wrong PIN \"END Incorrect PIN. 4 attempts left.\"; balance \"END Your balance is KES 900.00\"; payee \"CON Send to ussdb Test / Enter amount\"; sent \"END Sent KES 200.00 to ussdb Test. New balance KES 700.00. Ref SW-007602\"; language \"END Lugha imebadilishwa kuwa Kiswahili.\"",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-55",
+      "requirement": "FR-33",
+      "description": "Chama: contributions and a majority-approved payout",
+      "expected": "Members contribute to the pot; a payout needs a majority (2 of 2) and is paid only after the second approval; the pot has its own journal account",
+      "actual": "Created HTTP 201; joined HTTP 200; payout proposed, needs 2; after second vote: paid; pot 300.00, journal 300.00",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-56",
+      "requirement": "FR-34",
+      "description": "Fraud API with keys, decisions, rate limits and signed webhooks",
+      "expected": "A client's key assesses payments; a burst is challenged; external_id makes calls safe to retry; a wrong key is refused; the rate limit applies; the webhook is signed correctly",
+      "actual": "Client HTTP 201; first allow (asm_51); retry returns asm_51; 5th payment in a burst: challenge (4 payments out in the last 10 minutes; 4 payments to this recipient in the last 10 minutes); wrong key HTTP 401; label HTTP 200; webhook delivered, signature valid: true; with a limit of 3 a minute: 201, 201, 201, 429, 429",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-57",
+      "requirement": "FR-35",
+      "description": "Retraining from decisions and shadow scoring",
+      "expected": "Analyst decisions become labelled examples; retraining produces a challenger; later payments are also scored by the challenger in shadow; the challenger can be discarded",
+      "actual": "Labels: {\"alert\":26,\"dispute\":6,\"api\":6,\"fraud\":16,\"legit\":22,\"skipped\":0}; job done; challenger rf-20261117-113937-38live; payment shadow-scored 0.82; discard HTTP 200",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-58",
+      "requirement": "FR-35",
+      "description": "Drift between live payments and the training data",
+      "expected": "The drift check reports a population stability index for each model feature",
+      "actual": "HTTP 200; 500 payments; amount 8.2827, oldbalanceOrg 7.5416, newbalanceOrig 7.3776, oldbalanceDest 6.012, newbalanceDest 7.1151, type_encoded 3.9057, balance_discrepancy 6.4328",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-59",
+      "requirement": "NFR-03",
+      "description": "Retry queue scores payments made while the model was down",
+      "expected": "An unscored transfer is scored later with the features recorded at the time; a risky one raises a late alert",
+      "actual": "Queue scored 1, flagged 1; transaction scored, risk 0.867962; alert late_score",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-60",
+      "requirement": "FR-36",
+      "description": "Money-flow network around an account",
+      "expected": "The network view finds the accounts an account paid and was paid by, two hops out",
+      "actual": "HTTP 200; 3 accounts, 2 flows; includes the second hop: true",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-61",
+      "requirement": "FR-23",
+      "description": "Attack lab evaluation of every scenario",
+      "expected": "Every attack step expected to be caught is caught; ordinary steps raise no false alarm",
+      "actual": "Not run: needs RISK_MODE=enforce and ATTACK_LAB=1",
+      "status": "Not run"
+    },
+    {
+      "id": "TC-62",
+      "requirement": "FR-37",
+      "description": "Data export (right of access)",
+      "expected": "The user downloads their data; it includes their transactions and devices and never the password, PIN or two-factor secret",
+      "actual": "HTTP 200; 1 transactions, 1 devices; secrets absent: true",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-63",
+      "requirement": "FR-38",
+      "description": "Usability survey (System Usability Scale)",
+      "expected": "A completed questionnaire is scored on the 0 to 100 SUS scale; incomplete answers are refused; results are summarised for administrators",
+      "actual": "Best answers score 100; middle answers 75; incomplete HTTP 400; summary of 12 responses, mean 87.5",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-64",
+      "requirement": "NFR-11",
+      "description": "Latency metrics",
+      "expected": "/metrics is refused without credentials and gives Prometheus metrics, including model latency, to an administrator",
+      "actual": "Anonymous HTTP 401; admin HTTP 200; model latency p50 20 ms, p95 32 ms over 30 calls",
+      "status": "Pass"
+    },
+    {
+      "id": "TC-65",
+      "requirement": "FR-24",
+      "description": "Reconciliation after every test",
+      "expected": "The journal balances, both hash chains verify, and every wallet, savings goal, loan, chama and held payment matches its journal account",
+      "actual": "OK: true; 6567 journal entries and 1093 audit records verified; 596 wallets checked; issues 0",
+      "status": "Pass"
+    }
+  ]
+}

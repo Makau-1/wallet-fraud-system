@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureWallet | USSD simulator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="ussd">
+    <header class="topbar">
+        <a class="brand" href="index.html">
+            <img class="brand-logo" src="img/webmasters-logo.png" alt="Webmasters">
+            <span class="brand-divider" aria-hidden="true"></span>
+            <span class="brand-product">SecureWallet</span>
+        </a>
+    </header>
+    <main class="page">
+        <div class="page-head">
+            <span class="mono">Feature phones</span>
+            <h1 style="margin-top:10px">SecureWallet on USSD</h1>
+            <p>Check your balance, send money and see your last transactions from any phone, with no data or smartphone needed. This simulator sends exactly what Africa's Talking sends, so the same menu works on a real short code once one is set up.</p>
+        </div>
+        <p id="ussdOff" class="notice" hidden>The USSD simulator is switched off. Add <code>USSD_SIMULATOR=1</code> to <code>.env</code> and restart the server.</p>
+        <div class="ussd-layout" id="ussdOn">
+            <div class="handset">
+                <p class="hint" id="ussdPhone">Dialling from your linked phone number…</p>
+                <button type="button" id="ussdDial" class="full" style="margin-top:12px">Dial *384*7#</button>
+                <div class="ussd-screen" id="ussdScreen" aria-live="polite" style="margin-top:14px">Press Dial to open the menu as your own phone would.</div>
+                <form class="ussd-input" id="ussdForm" novalidate>
+                    <label for="ussdReply" class="visually-hidden">Reply</label>
+                    <input id="ussdReply" inputmode="numeric" autocomplete="off" disabled>
+                    <button type="submit" id="ussdSend" disabled>Send</button>
+                </form>
+                <div class="keypad" id="keypad"></div>
+            </div>
+            <section class="console">
+                <div class="console-head"><span class="mono">What the server received</span></div>
+                <ol class="ussd-log" id="ussdLog"></ol>
+                <p class="hint">Each reply starting with <code>CON</code> keeps the session open; <code>END</code> closes it. The <code>text</code> field carries every answer so far, joined by <code>*</code>. Sending money asks for your PIN and shows the recipient's registered name first. A first payment of KES 1,000 or more to someone also asks what it is for, as on the website.</p>
+            </section>
+        </div>
+    </main>
+    <script src="app.js"></script>
+    <script src="pages-v3.js"></script>
+</body>
+</html>

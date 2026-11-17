@@ -9,6 +9,7 @@
 
 const db = require('../config/db');
 const payments = require('../services/payments');
+const devices = require('../services/devices');
 const {
     ServiceError, checkAmount, withTransaction,
     walletForUser, debit, handle,
@@ -36,11 +37,12 @@ const bankTransfer = async (req, res) => {
 
     // Scored as a cash-out by the shared payment service, which also
     // applies the PIN challenge or hold in enforce mode.
-    return payments.respond(res, () => payments.execute({
+    return payments.respond(res, async () => payments.execute({
         userId: req.session.userId,
         kind: 'bank_transfer',
         amount: req.body.amount,
         pin: req.body.pin,
+        context: { newDevice: await devices.isNewDevice(req), channel: 'web' },
         details: { bank, account_masked: mask(accountNumber) },
     }));
 };

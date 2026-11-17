@@ -1,5 +1,17 @@
 # Caddy serves the site over HTTPS and passes requests to the web container.
 {$DOMAIN} {
-    encode gzip
-    reverse_proxy web:3000
+    # Live updates (Server-Sent Events): pass each event on at once and do
+    # not compress the stream, or the browser receives nothing until the
+    # buffer fills.
+    @events path /api/events
+    handle @events {
+        reverse_proxy web:3000 {
+            flush_interval -1
+        }
+    }
+
+    handle {
+        encode gzip
+        reverse_proxy web:3000
+    }
 }

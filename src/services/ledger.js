@@ -4,11 +4,28 @@
 // same database transaction, so the balance and the history always agree.
 
 const db = require('../config/db');
+const journal = require('./journal');
 
 class ServiceError extends Error {
-    constructor(status, message) {
+    constructor(status, message, body) {
         super(message);
         this.status = status;
+        if (body) this.body = body;
+    }
+}
+
+// Money that a frozen account may still move: into its own savings and
+// towards repaying its own loan.
+const ALLOWED_WHEN_FROZEN = new Set(['savings_deposit', 'loan_repayment']);
+
+// Refuses outgoing money from an account its owner (or an administrator)
+// has frozen, for example after "This wasn't me".
+async function checkNotFrozen(connection, walletId) {
+    const [rows] = await connection.execute(
+        'SELECT u.frozen_at FROM wallets w JOIN users u ON u.id = w.user_id WHERE w.id = ?', [walletId]);
+    if (rows.length && rows[0].frozen_at) {
+        throw new ServiceError(423, 'This account is frozen, so no money can leave it. Contact support to restore it.',
+            { message: 'This account is frozen, so no money can leave it. Contact support to restore it.', frozen: true });
     }
 }
 
@@ -79,9 +96,11 @@ async function lockWallet(connection, walletId) {
     return Number(rows[0].balance);
 }
 
-// Takes money out of a wallet. meta.type names the service.
+// Takes money out of a wallet. meta.type names the service, and decides
+// the journal account on the other side (services/journal.js).
 async function debit(connection, walletId, amount, meta) {
     const before = await lockWallet(connection, walletId);
+    if (!ALLOWED_WHEN_FROZEN.has(meta.type)) await checkNotFrozen(connection, walletId);
     if (amount > before) throw new ServiceError(400, 'Insufficient funds');
     const after = round2(before - amount);
 
@@ -99,6 +118,11 @@ async function debit(connection, walletId, amount, meta) {
             sender_balance_after: after,
         })]
     );
+    await journal.post(connection, {
+        kind: meta.type,
+        transactionId: result.insertId,
+        lines: [[journal.account.wallet(walletId), -amount], [journal.counterFor(meta), amount]],
+    });
     return { transactionId: result.insertId, before, after };
 }
 
@@ -121,6 +145,11 @@ async function credit(connection, walletId, amount, meta) {
             receiver_balance_after: after,
         })]
     );
+    await journal.post(connection, {
+        kind: meta.type,
+        transactionId: result.insertId,
+        lines: [[journal.counterFor(meta), -amount], [journal.account.wallet(walletId), amount]],
+    });
     return { transactionId: result.insertId, before, after };
 }
 
@@ -131,7 +160,7 @@ function handle(name, fn) {
             await fn(req, res);
         } catch (error) {
             if (error instanceof ServiceError) {
-                return res.status(error.status).json({ message: error.message });
+                return res.status(error.status).json(error.body || { message: error.message });
             }
             console.error(`[${name}]`, error);
             return res.status(500).json({ message: 'Something went wrong. Try again.' });
@@ -147,6 +176,7 @@ module.exports = {
     withTransaction,
     walletForUser,
     lockWallet,
+    checkNotFrozen,
     debit,
     credit,
     handle,

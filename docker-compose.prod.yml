@@ -14,6 +14,9 @@ services:
       NODE_ENV: production
       RISK_MODE: enforce
       ATTACK_LAB: "0"
+      USSD_SIMULATOR: "0"
+      # Administrators must set up two-step sign-in before using the console.
+      ADMIN_2FA: required
 
   caddy:
     image: caddy:2

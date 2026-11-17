@@ -5,13 +5,18 @@
 #
 # then open http://localhost:3000.
 #
-# Docker Compose reads DB_PASSWORD and SESSION_SECRET from the .env file in
-# this folder. The other settings are fixed here because inside Docker the
+# Docker Compose reads DB_PASSWORD, SESSION_SECRET and ML_ADMIN_TOKEN from
+# the .env file in this folder, and the optional settings listed in
+# .env.example. The other settings are fixed here because inside Docker the
 # services reach each other by name (db, ml), not by localhost.
 
 services:
   db:
     image: mysql:8.0
+    # Lets the application's own database account create the journal's
+    # append-only triggers when a migration is applied to an existing
+    # database (node scripts/migrate.js).
+    command: ["--log-bin-trust-function-creators=1"]
     environment:
       MYSQL_DATABASE: wallet_fraud_db
       MYSQL_USER: wallet
@@ -33,6 +38,12 @@ services:
 
   ml:
     build: ./ml
+    environment:
+      # The website sends this with retrain, promote and rollback requests.
+      ML_ADMIN_TOKEN: ${ML_ADMIN_TOKEN:?Set ML_ADMIN_TOKEN in the .env file}
+    volumes:
+      # The champion, any challenger and the archive of earlier models.
+      - ml_models:/srv/ml/models
     restart: unless-stopped
 
   web:
@@ -52,8 +63,26 @@ services:
       DB_NAME: wallet_fraud_db
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in the .env file}
       ML_URL: http://ml:8000
+      ML_ADMIN_TOKEN: ${ML_ADMIN_TOKEN:?Set ML_ADMIN_TOKEN in the .env file}
       RISK_MODE: ${RISK_MODE:-advisory}
       ATTACK_LAB: ${ATTACK_LAB:-0}
+      # Version 3 settings; see .env.example. Unset ones take their defaults.
+      ADMIN_2FA: ${ADMIN_2FA:-optional}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      TWO_PERSON_THRESHOLD: ${TWO_PERSON_THRESHOLD:-10000}
+      SCAM_CHECK_MIN: ${SCAM_CHECK_MIN:-1000}
+      COOLING_OFF_MINUTES: ${COOLING_OFF_MINUTES:-30}
+      RECONCILE_HOUR: ${RECONCILE_HOUR:-2}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      MPESA_MODE: ${MPESA_MODE:-simulator}
+      MPESA_CONSUMER_KEY: ${MPESA_CONSUMER_KEY:-}
+      MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET:-}
+      MPESA_SHORTCODE: ${MPESA_SHORTCODE:-}
+      MPESA_PASSKEY: ${MPESA_PASSKEY:-}
+      MPESA_CALLBACK_TOKEN: ${MPESA_CALLBACK_TOKEN:-}
+      USSD_SIMULATOR: ${USSD_SIMULATOR:-0}
+      USSD_CALLBACK_TOKEN: ${USSD_CALLBACK_TOKEN:-}
     ports:
       # Reachable from this computer only. In production Caddy sits in
       # front (docker-compose.prod.yml).
@@ -62,3 +91,4 @@ services:
 
 volumes:
   db_data:
+  ml_models:

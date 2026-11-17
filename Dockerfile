@@ -9,6 +9,8 @@ RUN npm ci --omit=dev
 
 COPY src ./src
 COPY scripts ./scripts
+# For "docker compose exec web node scripts/migrate.js" on an existing database.
+COPY database/migrations ./database/migrations
 
 USER node
 EXPOSE 3000

@@ -52,6 +52,16 @@
 
                 <p class="auth-switch">New to SecureWallet? <a href="register.html">Create an account</a></p>
             </form>
+
+            <form id="mfaForm" class="auth-card" novalidate hidden>
+                <span class="mono">Two-factor sign-in</span>
+                <h2 style="margin-top:10px">Enter your code</h2>
+                <p class="lead">Open your authenticator app and enter the 6-digit code for SecureWallet.</p>
+                <label for="mfaCode">Code</label>
+                <input id="mfaCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456">
+                <button id="mfaButton" type="submit">Verify</button>
+                <p id="mfaMessage" class="message" role="status" aria-live="polite"></p>
+            </form>
         </section>
     </main>
 
@@ -59,6 +69,7 @@
         <span class="mono">A Webmasters project</span>
         <span class="mono">Simulated wallet &middot; no real money moves</span>
     </footer>
+    <script src="i18n.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

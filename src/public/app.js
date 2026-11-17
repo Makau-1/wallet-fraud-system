@@ -5,11 +5,27 @@
 // Shared helpers
 // --------------------------------------------------
 
+// A key that identifies one payment attempt, so a retried request can
+// never move money twice (version 3).
+function newIdempotencyKey() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    return `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+}
+
+// Swahili translation, when i18n.js is loaded and Swahili is chosen.
+function t(text, values) {
+    return window.SWi18n ? window.SWi18n.t(text, values) : (values ? text.replace(/\{(\w+)\}/g, (m, k) => (values[k] ?? m)) : text);
+}
+
 async function api(path, options = {}) {
+    const { idempotencyKey, ...rest } = options;
+    const headers = {};
+    if (rest.body) headers['Content-Type'] = 'application/json';
+    if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
     const response = await fetch(path, {
         credentials: 'same-origin',
-        headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
-        ...options,
+        headers: Object.keys(headers).length ? headers : undefined,
+        ...rest,
     });
 
     let data = {};
@@ -162,6 +178,16 @@ const ICONS = {
     shield: 'M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6zM9 12l2 2 4-4',
     lab: 'M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3M7.5 15h9',
     statement: 'M5 4h14v16H5zM8 8h8M8 12h8M8 16h5',
+    chama: 'M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2 20c0-3 2.7-5 6-5s6 2 6 5M14.5 15.3A6.5 6.5 0 0 1 16 15c3.3 0 6 2 6 5',
+    mpesa: 'M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM10 8l2 2 2-2M12 10v5',
+    bell: 'M6 9a6 6 0 0 1 12 0c0 6 3 7 3 7H3s3-1 3-7M10 20a2 2 0 0 0 4 0',
+    network: 'M5 6a2 2 0 1 0 0-.01M19 6a2 2 0 1 0 0-.01M12 18a2 2 0 1 0 0-.01M6.5 7.5l4.5 9M17.5 7.5l-4.5 9M7 6h10',
+    ledger: 'M4 5h16v14H4zM4 9h16M9 5v14',
+    model: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12 4 7.5',
+    gauge: 'M4 15a8 8 0 1 1 16 0M12 15l4-5',
+    key: 'M15 7a4 4 0 1 1-3.9 4.9L4 19v-3h3v-3h3l1.1-1.1A4 4 0 0 1 15 7z',
+    list: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
+    star: 'M12 3l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9z',
 };
 
 function iconSvg(name) {
@@ -272,11 +298,42 @@ if (loginForm) {
                 body: JSON.stringify({ email, password }),
             });
 
+            if (data.mfaRequired) {
+                // Version 3: two-factor sign-in. The password was right; now
+                // the code from the authenticator app.
+                loginForm.hidden = true;
+                document.getElementById('mfaForm').hidden = false;
+                document.getElementById('mfaCode').focus();
+                return;
+            }
             window.location.href = data.user.role === 'admin' ? 'admin.html' : 'dashboard.html';
         } catch (error) {
             setMessage(message, error.status ? error.message : 'Could not reach the server. Check that it is running.', 'error');
             button.disabled = false;
             button.textContent = 'Sign in';
+        }
+    });
+}
+
+const mfaForm = document.getElementById('mfaForm');
+
+if (mfaForm) {
+    mfaForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const message = document.getElementById('mfaMessage');
+        const code = document.getElementById('mfaCode').value.replace(/\s+/g, '');
+        if (!/^\d{6}$/.test(code)) return setMessage(message, 'Enter the 6-digit code from your authenticator app.', 'error');
+        const button = document.getElementById('mfaButton');
+        button.disabled = true;
+        try {
+            const data = await api('/api/auth/mfa', { method: 'POST', body: JSON.stringify({ code }) });
+            window.location.href = data.user.role === 'admin' ? 'admin.html' : 'dashboard.html';
+        } catch (error) {
+            setMessage(message, error.status ? error.message : 'Could not reach the server.', 'error');
+            if (error.status === 401 && /expired|again/i.test(error.message)) {
+                setTimeout(() => window.location.reload(), 1500);
+            }
+            button.disabled = false;
         }
     });
 }
@@ -343,7 +400,7 @@ if (document.body.dataset.page === 'dashboard') {
             title: 'Send money', fields: ['recipientEmail'], review: 'scored',
             hint: 'Sends money to another SecureWallet user. Transfers are checked for fraud.',
             done: 'Transfer sent',
-            send: v => api('/api/wallet/transfer', { method: 'POST', body: JSON.stringify({ recipientEmail: v.recipientEmail, amount: v.amount, pin: v.pin, requestId: v.requestId }) }),
+            send: v => api('/api/wallet/transfer', { method: 'POST', idempotencyKey: v.idemKey, body: JSON.stringify({ recipientEmail: v.recipientEmail, amount: v.amount, pin: v.pin, requestId: v.requestId, purpose: v.purpose }) }),
             summary: v => (v.payee
                 ? [['To', v.payee.name], ['Email', v.payee.email]]
                 : [['To', v.recipientEmail]]),
@@ -359,7 +416,7 @@ if (document.body.dataset.page === 'dashboard') {
             title: 'Withdraw cash', fields: [], review: 'scored',
             hint: 'Takes money out of your wallet. Withdrawals are checked for fraud.',
             done: 'Withdrawal made',
-            send: v => api('/api/wallet/withdraw', { method: 'POST', body: JSON.stringify({ amount: v.amount, pin: v.pin }) }),
+            send: v => api('/api/wallet/withdraw', { method: 'POST', idempotencyKey: v.idemKey, body: JSON.stringify({ amount: v.amount, pin: v.pin }) }),
             summary: () => [],
             heading: v => `Withdraw ${money(v.amount)}`,
         },
@@ -367,13 +424,13 @@ if (document.body.dataset.page === 'dashboard') {
             title: 'Deposit', fields: [], review: null,
             hint: 'Adds money to your wallet.',
             done: 'Deposit received',
-            send: v => api('/api/wallet/deposit', { method: 'POST', body: JSON.stringify({ amount: v.amount }) }),
+            send: v => api('/api/wallet/deposit', { method: 'POST', idempotencyKey: v.idemKey, body: JSON.stringify({ amount: v.amount }) }),
         },
         bank: {
             title: 'Send to a bank', fields: ['bank', 'accountNumber'], review: 'scored',
             hint: 'Moves money from your wallet to a bank account. Bank transfers are checked for fraud like withdrawals.',
             done: 'Bank transfer sent',
-            send: v => api('/api/payments/bank', { method: 'POST', body: JSON.stringify({ bank: v.bank, accountNumber: v.accountNumber, amount: v.amount, pin: v.pin }) }),
+            send: v => api('/api/payments/bank', { method: 'POST', idempotencyKey: v.idemKey, body: JSON.stringify({ bank: v.bank, accountNumber: v.accountNumber, amount: v.amount, pin: v.pin }) }),
             summary: v => [['Bank', v.bank], ['Account', '••••' + v.accountNumber.slice(-4)]],
             heading: v => `Send ${money(v.amount)} to ${v.bank}`,
         },
@@ -381,7 +438,7 @@ if (document.body.dataset.page === 'dashboard') {
             title: 'Pay bill', fields: ['number', 'account'], review: 'payment', numberLabel: 'Business number', numberPlaceholder: 'For example, 888880',
             hint: 'Pays a business, such as a utility or school, using its business number.',
             done: 'Bill paid',
-            send: v => api('/api/payments/bill', { method: 'POST', body: JSON.stringify({ kind: 'paybill', number: v.number, account: v.account, amount: v.amount }) }),
+            send: v => api('/api/payments/bill', { method: 'POST', idempotencyKey: v.idemKey, body: JSON.stringify({ kind: 'paybill', number: v.number, account: v.account, amount: v.amount }) }),
             summary: v => [['Business number', v.number], ['Account', v.account]],
             heading: v => `Pay ${money(v.amount)}`,
         },
@@ -389,7 +446,7 @@ if (document.body.dataset.page === 'dashboard') {
             title: 'Buy goods', fields: ['number'], review: 'payment', numberLabel: 'Till number', numberPlaceholder: 'For example, 123456',
             hint: 'Pays a shop using its till number.',
             done: 'Payment made',
-            send: v => api('/api/payments/bill', { method: 'POST', body: JSON.stringify({ kind: 'till', number: v.number, amount: v.amount }) }),
+            send: v => api('/api/payments/bill', { method: 'POST', idempotencyKey: v.idemKey, body: JSON.stringify({ kind: 'till', number: v.number, amount: v.amount }) }),
             summary: v => [['Till number', v.number]],
             heading: v => `Pay ${money(v.amount)}`,
         },
@@ -397,7 +454,7 @@ if (document.body.dataset.page === 'dashboard') {
             title: 'Buy airtime', fields: ['number'], review: 'payment', numberLabel: 'Phone number', numberPlaceholder: '0712345678',
             hint: 'Buys airtime for any Kenyan phone number, up to 10,000 at a time.',
             done: 'Airtime bought',
-            send: v => api('/api/payments/bill', { method: 'POST', body: JSON.stringify({ kind: 'airtime', number: v.number, amount: v.amount }) }),
+            send: v => api('/api/payments/bill', { method: 'POST', idempotencyKey: v.idemKey, body: JSON.stringify({ kind: 'airtime', number: v.number, amount: v.amount }) }),
             summary: v => [['Phone number', v.number]],
             heading: v => `Buy ${money(v.amount)} airtime`,
         },
@@ -459,8 +516,8 @@ if (document.body.dataset.page === 'dashboard') {
     }
 
     // ---------- views ----------
-    const VIEWS = ['home', 'savings', 'loans', 'requests', 'security'];
-    const VIEW_TITLES = { home: 'My wallet', savings: 'Savings goals', loans: 'Loans', requests: 'Requests', security: 'Security' };
+    const VIEWS = ['home', 'savings', 'loans', 'requests', 'chamas', 'security'];
+    const VIEW_TITLES = { home: 'My wallet', savings: 'Savings goals', loans: 'Loans', requests: 'Requests', chamas: 'Chamas', security: 'Security' };
 
     function showView() {
         const view = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'home';
@@ -471,8 +528,9 @@ if (document.body.dataset.page === 'dashboard') {
             if (link.dataset.view === view) link.setAttribute('aria-current', 'page');
             else link.removeAttribute('aria-current');
         });
-        $('viewHeading').textContent = VIEW_TITLES[view];
-        document.title = `SecureWallet | ${VIEW_TITLES[view]}`;
+        $('viewHeading').textContent = t(VIEW_TITLES[view]);
+        document.title = `SecureWallet | ${t(VIEW_TITLES[view])}`;
+        if (window.SW && window.SW.onView) window.SW.onView(view);
         if (view === 'savings') loadSavings().catch(() => {});
         if (view === 'loans') loadLoans().catch(() => {});
         if (view === 'requests') loadRequests().catch(() => {});
@@ -487,13 +545,20 @@ if (document.body.dataset.page === 'dashboard') {
         const fc = tx.fraud_check;
         // Version 2: a hold or a refund applies whether or not the model
         // was available to score the payment.
-        const known = fc.scoring_status === 'scored' && fc.fraud_score !== null ? { score: fc.fraud_score } : {};
+        // The score is left out in enforce mode; the check's outcome still shows.
+        const hasScore = typeof fc.fraud_score === 'number';
+        const known = fc.scoring_status === 'scored' && hasScore ? { score: fc.fraud_score } : {};
+        if (tx.status === 'pending' && tx.risk_action === 'cooling_off') {
+            const at = tx.cooling_until ? new Date(tx.cooling_until).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
+            return { ...known, tone: 'high', dot: 'warn', label: at ? t('Sending at {time}', { time: at }) : t('Cooling off'), cooling: true };
+        }
         if (tx.status === 'pending') return { ...known, tone: 'high', dot: 'ok', label: 'On hold', held: true };
+        if (tx.risk_action === 'cancelled') return { ...known, tone: 'low', dot: 'idle', label: 'Cancelled, refunded', refunded: true };
         if (tx.risk_action === 'reversed') return { ...known, tone: 'fraud', dot: 'bad', label: 'Stopped, refunded', refunded: true };
         if (fc.scoring_status !== 'scored' || fc.fraud_score === null) {
             return { tone: '', dot: 'idle', label: 'Not scored', long: 'Not scored: the fraud model was unavailable when this was made.' };
         }
-        const score = fc.fraud_score;
+        const score = hasScore ? fc.fraud_score : undefined;
         if (tx.risk_action === 'released') return { score, tone: 'low', dot: 'safe', label: 'Reviewed, released' };
         if (tx.risk_action === 'verified') return { score, tone: 'low', dot: 'safe', label: 'Verified with PIN' };
         if (fc.alert_status === 'confirmed_fraud') return { score, tone: 'fraud', dot: 'bad', label: 'Confirmed fraud' };
@@ -520,6 +585,10 @@ if (document.body.dataset.page === 'dashboard') {
             case 'savings_release': return `From savings: ${d.vault_name || 'a goal'}`;
             case 'loan_disbursement': return 'Loan received';
             case 'loan_repayment': return 'Loan repayment';
+            case 'mpesa_deposit': return `M-Pesa deposit${d.receipt ? ' ' + d.receipt : ''}`;
+            case 'chama_contribution': return `Contribution to ${d.chama_name || 'a chama'}`;
+            case 'chama_payout': return `Payout from ${d.chama_name || 'a chama'}`;
+            case 'clawback': return tx.direction === 'in' ? 'Money recovered for you' : 'Recovered: payment confirmed as unauthorised';
             default:
                 return tx.direction === 'out' ? `Sent to ${other || 'another user'}` : `Received from ${other || 'another user'}`;
         }
@@ -529,6 +598,7 @@ if (document.body.dataset.page === 'dashboard') {
         const labels = {
             deposit: 'Deposit', withdrawal: 'Withdrawal', bank_transfer: 'Bank transfer',
             savings_deposit: 'Savings', savings_release: 'Savings', loan_disbursement: 'Loan', loan_repayment: 'Loan repayment',
+            mpesa_deposit: 'M-Pesa', chama_contribution: 'Chama', chama_payout: 'Chama', clawback: 'Recovery',
         };
         if (tx.type === 'payment') return KIND_LABEL[(tx.details || {}).kind] || 'Payment';
         if (labels[tx.type]) return labels[tx.type];
@@ -538,6 +608,7 @@ if (document.body.dataset.page === 'dashboard') {
     const TX_ICON = {
         deposit: 'deposit', withdrawal: 'withdraw', bank_transfer: 'bank', payment: 'paybill',
         savings_deposit: 'savings', savings_release: 'savings', loan_disbursement: 'loan', loan_repayment: 'loan',
+        mpesa_deposit: 'airtime', chama_contribution: 'chama', chama_payout: 'chama', clawback: 'shield',
     };
 
     function txIcon(tx) {
@@ -613,7 +684,9 @@ if (document.body.dataset.page === 'dashboard') {
             receiptRow(dl, 'Balance after', formatMoney(tx.balance_after));
         }
         const state = checkState(tx);
+        if (tx.purpose) receiptRow(dl, 'Purpose', tx.purpose);
         receiptRow(dl, 'Status', tx.status === 'completed' ? 'Completed'
+            : state && state.cooling ? `Cooling off: it will be sent at ${new Date(tx.cooling_until).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} unless you cancel it`
             : tx.status === 'pending' ? 'On hold: not yet paid out, an analyst is reviewing it'
             : state && state.refunded ? 'Stopped: the money was returned to your wallet'
             : tx.status);
@@ -623,6 +696,7 @@ if (document.body.dataset.page === 'dashboard') {
             receiptRow(dl, 'Fraud check', 'Not applicable to this type');
         }
 
+        if (window.SW && window.SW.receiptActions) window.SW.receiptActions(tx, state);
         if (typeof receipt.showModal === 'function') receipt.showModal();
         else receipt.setAttribute('open', '');
     }
@@ -667,9 +741,14 @@ if (document.body.dataset.page === 'dashboard') {
         const states = all.map(checkState).filter(Boolean);
         const underReview = states.filter(state => state.label === 'Under review').length;
         const onHold = states.filter(state => state.held).length;
+        const cooling = states.filter(state => state.cooling).length;
         const banner = $('reviewBanner');
-        banner.hidden = underReview + onHold === 0;
-        if (onHold) {
+        banner.hidden = underReview + onHold + cooling === 0;
+        if (cooling) {
+            banner.replaceChildren(dotLabel('warn', cooling === 1
+                ? t('1 payment is cooling off. Open it in your activity to cancel it before it is sent.')
+                : t('{n} payments are cooling off. Open them in your activity to cancel them before they are sent.', { n: cooling })));
+        } else if (onHold) {
             banner.replaceChildren(dotLabel('ok', onHold === 1
                 ? '1 payment is on hold. It has left your balance but has not been paid out; an analyst will release it or return it to you.'
                 : `${onHold} payments are on hold. They have left your balance but have not been paid out; an analyst will release them or return them to you.`));
@@ -783,6 +862,7 @@ if (document.body.dataset.page === 'dashboard') {
         actionForm.hidden = true;
         reviewPanel.hidden = true;
         hidePinStep();
+        hidePurposeStep();
         pending = null;
         payingRequest = null;
         action = null;
@@ -876,13 +956,14 @@ if (document.body.dataset.page === 'dashboard') {
         const payeeNote = $('payeeNote');
         payeeNote.hidden = !v.payee;
         if (v.payee) {
-            payeeNote.className = 'payee' + (v.payee.paidBefore ? '' : ' new');
+            payeeNote.className = 'payee' + (v.payee.warning ? ' warned' : v.payee.paidBefore ? '' : ' new');
             payeeNote.replaceChildren(
                 el('strong', null, v.payee.name),
                 el('span', null, v.payee.paidBefore
-                    ? 'You have paid this person before.'
-                    : 'You have not paid this person before. Check the name is who you expect.')
+                    ? t('You have paid this person before.')
+                    : t('You have not paid this person before. Check the name is who you expect.'))
             );
+            if (v.payee.warning) payeeNote.appendChild(el('span', 'payee-warning', v.payee.warning.text));
         }
 
         const notice = $('reviewNotice');
@@ -910,6 +991,9 @@ if (document.body.dataset.page === 'dashboard') {
     async function submit(v) {
         const act = action;
         const config = ACTIONS[act];
+        // One key per payment attempt; it is kept when the PIN or the
+        // purpose is asked for, so the retry is the same attempt.
+        if (!v.idemKey) v.idemKey = newIdempotencyKey();
         const request = payingRequest;
         const buttons = [moveButton, $('reviewConfirm'), $('reviewBack'), $('formBack'), $('pinCancel'),
             $('pinForm').querySelector('button[type=submit]'), ...document.querySelectorAll('.action')];
@@ -923,6 +1007,11 @@ if (document.body.dataset.page === 'dashboard') {
             buttons.forEach(b => { b.disabled = false; });
             if (handleAuth(error)) return;
             const challenge = error.status === 428 && error.data ? error.data.challenge : null;
+            if (challenge === 'purpose') {
+                // Version 3: the scam check.
+                showPurposeStep(v, error.data.purposes || []);
+                return;
+            }
             if (challenge === 'pin') {
                 // The risk engine wants proof it is the account holder.
                 showPinStep(v, error.data);
@@ -976,6 +1065,12 @@ if (document.body.dataset.page === 'dashboard') {
         if (state && state.score !== undefined) detail += ` · risk ${state.score.toFixed(2)}`;
         if (state && state.label === 'Not scored') detail += ' · not scored';
         const flagged = state && state.label === 'Under review';
+        if (data.coolingOff) {
+            const at = new Date(data.coolingOff.until).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            toast(t('Payment will be sent at {time}', { time: at }),
+                `${detail} · ${t('you can cancel it from your activity until then')}`, true);
+            return;
+        }
         if (data.held) {
             // Not paid out yet. A request being paid stays open until then.
             toast(data.message || 'Payment on hold for review',
@@ -1037,6 +1132,63 @@ if (document.body.dataset.page === 'dashboard') {
         if (config.review) showReview(v);
         else submit(v);
     });
+
+    // ---------- purpose step: the scam check (version 3) ----------
+    let purposeFor = null;
+
+    function hidePurposeStep() {
+        $('purposeStep').hidden = true;
+        $('scamWarning').hidden = true;
+        purposeFor = null;
+    }
+
+    function showPurposeStep(v, purposes) {
+        actionGrid.hidden = true;
+        actionForm.hidden = true;
+        reviewPanel.hidden = true;
+        $('pinStep').hidden = true;
+        $('scamWarning').hidden = true;
+        $('purposeStep').hidden = false;
+        purposeFor = v;
+        $('purposeTitle').textContent = t('What is this {amount} for?', { amount: money(v.amount) });
+        const list = $('purposeList');
+        list.replaceChildren(...purposes.map(p => {
+            const button = el('button', 'purpose-option', t(p.label));
+            button.type = 'button';
+            button.addEventListener('click', () => choosePurpose(p));
+            return button;
+        }));
+        list.querySelector('button').focus();
+    }
+
+    function choosePurpose(p) {
+        const v = purposeFor;
+        if (!v) return;
+        v.purpose = p.key;
+        if (!p.risky) {
+            hidePurposeStep();
+            submit(v);
+            return;
+        }
+        // A scam pattern: stop and explain before going any further.
+        $('scamWarning').hidden = false;
+        $('scamReason').textContent = t(p.label);
+        $('scamContinue').focus();
+    }
+
+    $('scamCancel').addEventListener('click', () => {
+        hidePurposeStep();
+        showGrid();
+        toast(t('Payment cancelled'), t('No money was sent'));
+    });
+
+    $('scamContinue').addEventListener('click', () => {
+        const v = purposeFor;
+        hidePurposeStep();
+        if (v) submit(v);
+    });
+
+    $('purposeCancel').addEventListener('click', () => { hidePurposeStep(); showGrid(); });
 
     // ---------- PIN step (shown when the server challenges a payment) ----------
     let pinFor = null;
@@ -1436,10 +1588,22 @@ if (document.body.dataset.page === 'dashboard') {
         if (loanInfo && loanInfo.active) repay(loanInfo.active.outstanding, event.currentTarget);
     });
 
+    // ---------- shared with dashboard-v3.js ----------
+    window.SW = {
+        api, el, money, toast, formatMoney, formatDate, reference, dotLabel, setMessage, failText, handleAuth,
+        refreshHome: () => refreshHome(), loadBalance: () => loadBalance(), loadHistory: reset => loadHistory(reset),
+        receiptRow, closeReceipt: () => receipt.close(), openAction, t,
+        get currency() { return currency; },
+        get hasPin() { return hasPin; },
+        set hasPin(value) { hasPin = value; },
+        get riskMode() { return riskMode; },
+    };
+
     // ---------- start ----------
     (async () => {
         const user = await requireUser('user');
         if (!user) return;
+        if (window.SW.start) window.SW.start(user);
         $('userName').textContent = user.name;
         $('holderName').textContent = user.name;
         hasPin = !!user.hasPin;
@@ -1467,413 +1631,4 @@ if (document.body.dataset.page === 'dashboard') {
     })();
 }
 
-// --------------------------------------------------
-// Fraud review (administrator)
-// --------------------------------------------------
-
-if (document.body.dataset.page === 'admin') {
-    wireLogout();
-
-    let status = 'pending';
-    const list = document.getElementById('alertList');
-    const adminMessage = document.getElementById('adminMessage');
-
-    const EMPTY = {
-        pending: 'No alerts are waiting for review. New ones appear here when a payment reaches the alert threshold.',
-        confirmed_fraud: 'No alerts have been confirmed as fraud yet.',
-        cleared: 'No alerts have been dismissed yet.',
-    };
-
-    function row(label, value) {
-        const frag = document.createDocumentFragment();
-        frag.appendChild(el('dt', null, label));
-        frag.appendChild(el('dd', null, value));
-        return frag;
-    }
-
-    // Plain-language context drawn from the transaction's recorded balances,
-    // which the model scores directly. This reads the pattern for the
-    // reviewer; it is not a breakdown of how the score was computed.
-    function signals(alert, meta) {
-        const out = [];
-        const amount = Number(alert.amount);
-        const before = Number(meta.sender_balance_before);
-        const after = Number(meta.sender_balance_after);
-
-        if (Number.isFinite(before) && before > 0) {
-            const share = Math.round((amount / before) * 100);
-            out.push([share >= 90 ? 'bad' : share >= 50 ? 'warn' : 'idle',
-                `Moved ${share}% of the sender's balance in one transaction`]);
-        }
-        if (Number.isFinite(after) && after === 0) {
-            out.push(['bad', 'Sender\'s wallet was left empty']);
-        }
-        const cashOut = meta.type === 'withdrawal' || meta.type === 'bank_transfer';
-        if (!cashOut && meta.receiver_balance_before !== undefined) {
-            const rb = Number(meta.receiver_balance_before);
-            out.push([rb === 0 ? 'warn' : 'idle', rb === 0
-                ? 'Recipient\'s wallet was empty before receiving'
-                : `Recipient already held ${formatMoney(rb)}`]);
-        }
-        if (cashOut) {
-            out.push(['idle', meta.type === 'bank_transfer'
-                ? 'Money left the wallet system to a bank account, scored as a cash-out'
-                : 'Scored as a cash-out, the other transaction type in which fraud occurs']);
-        }
-        return out;
-    }
-
-    const FEATURE_LABEL = {
-        amount: 'Amount',
-        oldbalanceOrg: 'Sender balance before',
-        newbalanceOrig: 'Sender balance after',
-        oldbalanceDest: 'Recipient balance before',
-        newbalanceDest: 'Recipient balance after',
-        type_encoded: 'Transaction type',
-        balance_discrepancy: 'Balance discrepancy',
-    };
-
-    function featureValue(c) {
-        if (c.feature === 'type_encoded') return c.value === 1 ? 'transfer' : 'cash-out';
-        return formatMoney(c.value);
-    }
-
-    // The risk engine's own record of why the payment was raised: the
-    // behavioural and network signals, and how each model feature moved
-    // the model's score. Unlike the context list, this is the breakdown.
-    function explanation(risk) {
-        const box = el('div', 'signals explain');
-        box.appendChild(el('span', 'mono', 'Why this was raised'));
-
-        const sum = el('p', 'risk-sum');
-        if (risk.model_score === null || risk.model_score === undefined) {
-            sum.append(
-                document.createTextNode('The fraud model was unavailable, so this risk of '),
-                el('strong', null, Number(risk.score).toFixed(2)),
-                document.createTextNode(' comes from the behavioural signals alone.'));
-        } else {
-            sum.append(
-                document.createTextNode('Model score '), el('strong', null, Number(risk.model_score).toFixed(2)),
-                document.createTextNode(risk.signals && risk.signals.length ? ' raised by behaviour to a risk of ' : ', no behavioural signals, risk '),
-                el('strong', null, Number(risk.score).toFixed(2)));
-        }
-        box.appendChild(sum);
-
-        if (risk.signals && risk.signals.length) {
-            const ul = el('ul');
-            risk.signals.forEach(signal => {
-                const li = el('li');
-                const text = el('span', 'why');
-                text.appendChild(dotLabel(signal.weight >= 0.3 ? 'bad' : 'warn', signal.label));
-                li.appendChild(text);
-                li.appendChild(el('span', 'weight mono', `weight ${Number(signal.weight).toFixed(2)}`));
-                ul.appendChild(li);
-            });
-            box.appendChild(ul);
-        }
-
-        const contributions = (risk.contributions || []).filter(c => Math.abs(c.contribution) >= 0.005).slice(0, 5);
-        if (contributions.length) {
-            box.appendChild(el('span', 'mono sub', 'What moved the model score'));
-            const largest = Math.max(...contributions.map(c => Math.abs(c.contribution)));
-            const chart = el('div', 'contrib');
-            contributions.forEach(c => {
-                const up = c.contribution > 0;
-                const rowNode = el('div', 'contrib-row');
-                rowNode.appendChild(el('span', 'contrib-name', `${FEATURE_LABEL[c.feature] || c.feature} (${featureValue(c)})`));
-                const track = el('span', 'contrib-track');
-                const bar = el('i', up ? 'up' : 'down');
-                bar.style.width = `${Math.max(4, (Math.abs(c.contribution) / largest) * 100)}%`;
-                track.appendChild(bar);
-                rowNode.appendChild(track);
-                rowNode.appendChild(el('span', 'contrib-num mono', `${up ? '+' : '−'}${Math.abs(c.contribution).toFixed(2)}`));
-                chart.appendChild(rowNode);
-            });
-            box.appendChild(chart);
-            if (risk.base_value !== null && risk.base_value !== undefined) {
-                box.appendChild(el('p', 'note', `The model starts from ${Number(risk.base_value).toFixed(2)} and each feature moves the score up (orange) or down (green); together they add up to the model score. Balance discrepancy is always zero in this wallet, so the model leans on the balances.`));
-            }
-        }
-        return box;
-    }
-
-    function renderAlert(alert) {
-        const meta = parseMeta(alert.metadata);
-        const type = meta.type === 'withdrawal' ? 'Withdrawal'
-            : meta.type === 'bank_transfer' ? `Bank transfer to ${meta.bank || 'a bank'} ${meta.account_masked || ''}`.trim()
-            : 'Transfer';
-        const cashOut = meta.type === 'withdrawal' || meta.type === 'bank_transfer';
-        const score = Number(alert.score);
-        const item = el('li', `alert ${alert.status}`);
-        const tone = alert.status === 'confirmed_fraud' ? 'fraud' : alert.status === 'cleared' ? 'low' : 'high';
-
-        const scoreBox = el('div', 'score');
-        scoreBox.appendChild(el('span', 'mono', meta.risk ? 'Risk score' : 'Fraud score'));
-        scoreBox.appendChild(el('div', 'figure', score.toFixed(2)));
-        scoreBox.appendChild(meter(score, tone));
-        item.appendChild(scoreBox);
-
-        const body = el('div');
-        const who = alert.sender_name || alert.sender_email || 'Unknown sender';
-        const held = alert.transaction_status === 'pending';
-        const heading = el('h3', null, `${type} of ${alert.currency || 'USD'} ${formatMoney(alert.amount)} by ${who}`);
-        if (held) heading.append(' ', el('span', 'badge hold', 'On hold'));
-        else if (meta.risk && meta.risk.action === 'released') heading.append(' ', el('span', 'badge', 'Released'));
-        else if (meta.risk && meta.risk.action === 'reversed') heading.append(' ', el('span', 'badge', 'Refunded'));
-        body.appendChild(heading);
-
-        const dl = el('dl');
-        dl.appendChild(row('From', alert.sender_email || 'Unknown'));
-        if (!cashOut) dl.appendChild(row('To', alert.receiver_email || 'Unknown'));
-        if (meta.sender_balance_before !== undefined) {
-            dl.appendChild(row('Sender balance',
-                `${formatMoney(meta.sender_balance_before)} before, ${formatMoney(meta.sender_balance_after)} after`));
-        }
-        dl.appendChild(row('Made', formatDate(alert.transaction_time)));
-        dl.appendChild(row('Reference', reference(alert.transaction_id)));
-        body.appendChild(dl);
-
-        if (meta.risk && meta.risk.score !== null && meta.risk.score !== undefined) {
-            body.appendChild(explanation(meta.risk));
-        }
-
-        const found = signals(alert, meta);
-        if (found.length) {
-            const box = el('div', 'signals');
-            box.appendChild(el('span', 'mono', 'Context for this alert'));
-            const ul = el('ul');
-            found.forEach(([kind, text]) => {
-                const li = el('li');
-                li.appendChild(dotLabel(kind, text));
-                ul.appendChild(li);
-            });
-            box.appendChild(ul);
-            box.appendChild(el('p', 'note', 'Read from the recorded balances, which the model scores. This describes the pattern; it is not a breakdown of the score.'));
-            body.appendChild(box);
-        }
-        item.appendChild(body);
-
-        if (alert.status === 'pending') {
-            const actions = el('div', 'actions');
-            const confirmButton = el('button', 'danger', held ? 'Confirm fraud, refund sender' : 'Confirm fraud');
-            const dismissButton = el('button', 'quiet', held ? 'Release payment' : 'Dismiss');
-            confirmButton.type = 'button';
-            dismissButton.type = 'button';
-            confirmButton.addEventListener('click', () => decide(alert.id, 'confirmed_fraud', [confirmButton, dismissButton]));
-            dismissButton.addEventListener('click', () => decide(alert.id, 'cleared', [confirmButton, dismissButton]));
-            actions.append(confirmButton, dismissButton);
-            item.appendChild(actions);
-        } else {
-            const decision = el('div', 'decision');
-            decision.appendChild(el('strong', null, alert.status === 'confirmed_fraud' ? 'Confirmed fraud' : 'Dismissed'));
-            decision.appendChild(document.createTextNode(
-                `by ${alert.reviewed_by_name || 'an administrator'}${alert.reviewed_at ? ', ' + formatDate(alert.reviewed_at) : ''}`));
-            item.appendChild(decision);
-        }
-
-        return item;
-    }
-
-    async function load() {
-        try {
-            const data = await api(`/api/admin/fraud-alerts?status=${status}`);
-            Object.entries(data.counts).forEach(([key, value]) => {
-                const counter = document.getElementById(`count-${key}`);
-                if (counter) counter.textContent = value;
-                const stat = document.getElementById(`stat-${key}`);
-                if (stat) stat.textContent = value;
-            });
-            if (data.alerts.length === 0) {
-                list.replaceChildren(el('li', 'empty', EMPTY[status]));
-            } else {
-                list.replaceChildren(...data.alerts.map(renderAlert));
-            }
-        } catch (error) {
-            if (error.status === 401 || error.status === 403) {
-                window.location.href = 'login.html';
-                return;
-            }
-            list.replaceChildren(el('li', 'empty', 'Could not load alerts. Refresh the page to try again.'));
-        }
-    }
-
-    async function decide(id, decision, buttons) {
-        buttons.forEach(button => { button.disabled = true; });
-        try {
-            const result = await api(`/api/admin/fraud-alerts/${id}/status`, {
-                method: 'PATCH',
-                body: JSON.stringify({ status: decision }),
-            });
-            const moved = result.settlement === 'reversed' ? ' The held money was returned to the sender.'
-                : result.settlement === 'released' ? ' The held payment was released.' : '';
-            setMessage(adminMessage, (decision === 'confirmed_fraud'
-                ? `Alert #${id} confirmed as fraud.`
-                : `Alert #${id} dismissed.`) + moved, 'success');
-            await load();
-        } catch (error) {
-            setMessage(adminMessage, error.message, 'error');
-            buttons.forEach(button => { button.disabled = false; });
-        }
-    }
-
-    document.querySelectorAll('.tabs button').forEach(button => {
-        button.addEventListener('click', () => {
-            status = button.dataset.status;
-            document.querySelectorAll('.tabs button').forEach(b => {
-                b.setAttribute('aria-selected', String(b === button));
-            });
-            setMessage(adminMessage, '');
-            load();
-        });
-    });
-
-    // ---------- sections: review and attack lab ----------
-    const byId = id => document.getElementById(id);
-
-    document.querySelectorAll('.mode-switch button').forEach(button => {
-        button.addEventListener('click', () => {
-            document.querySelectorAll('.mode-switch button').forEach(b => {
-                b.setAttribute('aria-selected', String(b === button));
-            });
-            document.querySelectorAll('[data-section-panel]').forEach(panel => {
-                panel.hidden = panel.dataset.sectionPanel !== button.dataset.section;
-            });
-            if (button.dataset.section === 'alerts') load();
-        });
-    });
-
-    function paintMode(mode) {
-        const enforce = mode === 'enforce';
-        ['modeBadge', 'labModeBadge'].forEach(id => {
-            byId(id).textContent = enforce ? 'Enforcing' : 'Advisory';
-            byId(id).className = 'badge' + (enforce ? ' hold' : '');
-        });
-        byId('reviewIntro').textContent = enforce
-            ? 'Payments whose risk score reached the alert threshold. Payments marked on hold have left the sender but have not been paid out: confirming fraud returns the money to the sender, and releasing sends it on.'
-            : 'Payments whose risk score reached the alert threshold. In advisory mode the money has already moved; your decision records whether the transaction was fraud.';
-    }
-
-    // ---------- attack lab ----------
-    const OUTCOME = {
-        allowed: ['safe', 'Allowed'],
-        verified: ['safe', 'Verified with PIN'],
-        flagged: ['warn', 'Flagged for review'],
-        challenged: ['warn', 'Stopped: PIN required'],
-        held: ['bad', 'Held for review'],
-        unscored: ['idle', 'Not scored'],
-        not_run: ['idle', 'Did not run'],
-        prevented: ['safe', 'Prevented by an earlier stop'],
-    };
-
-    function renderRun(result) {
-        const s = result.summary;
-        byId('labResult').hidden = false;
-        byId('labResultTitle').textContent = result.scenario.title;
-        byId('labResultMode').textContent = result.mode === 'enforce' ? 'Enforcing' : 'Advisory';
-
-        const stat = (label, value, tone) => {
-            const box = el('div', 'lab-stat' + (tone ? ' ' + tone : ''));
-            box.appendChild(el('span', 'mono', label));
-            box.appendChild(el('strong', null, value));
-            return box;
-        };
-        const stats = [];
-        if (s.attackSteps) {
-            stats.push(stat('Attack steps caught', `${s.detected} of ${s.attackSteps}`, s.detected === s.attackSteps ? 'good' : 'poor'));
-            stats.push(stat('Model alone would catch', `${s.modelAlone} of ${s.attackSteps}`));
-            stats.push(stat('Money stopped', result.mode === 'enforce'
-                ? `${formatMoney(s.stopped)} of ${formatMoney(s.attempted)}`
-                : 'None: advisory mode only flags', result.mode === 'enforce' && s.stopped > 0 ? 'good' : ''));
-        }
-        if (s.normalSteps) {
-            stats.push(stat('False alarms', `${s.falsePositives} of ${s.normalSteps}`, s.falsePositives === 0 ? 'good' : 'poor'));
-        }
-        byId('labSummary').replaceChildren(...stats);
-
-        byId('labTrace').replaceChildren(...result.steps.map(step => {
-            const [tone, label] = OUTCOME[step.outcome] || ['idle', step.outcome];
-            const li = el('li', 'trace-step');
-            const head = el('div', 'trace-head');
-            head.appendChild(el('strong', null, step.label));
-            const out = el('span', 'mono');
-            out.appendChild(dotLabel(tone, label));
-            head.appendChild(out);
-            li.appendChild(head);
-            const what = step.kind === 'transfer' ? `${step.actor} sends ${formatMoney(step.amount)} to ${step.to}`
-                : step.kind === 'withdrawal' ? `${step.actor} withdraws ${formatMoney(step.amount)}`
-                : `${step.actor} sends ${formatMoney(step.amount)} to a bank`;
-            const line = el('div', 'trace-what', what);
-            if (step.risk !== null && step.risk !== undefined) {
-                line.append(' ', meter(step.risk, step.detected ? 'high' : 'low'), el('span', 'mono',
-                    ` risk ${Number(step.risk).toFixed(2)}${step.modelScore !== null && step.modelScore !== undefined ? ' · model alone ' + Number(step.modelScore).toFixed(2) : ''}`));
-            }
-            li.appendChild(line);
-            if (step.reasons && step.reasons.length) {
-                li.appendChild(el('div', 'trace-why', step.reasons.join(' · ')));
-            }
-            const miss = (step.expect === 'detect' && !step.detected) || (step.expect === 'pass' && step.detected);
-            if (miss) li.appendChild(el('div', 'trace-miss', step.expect === 'detect' ? 'Missed: this step should have been caught.' : 'False alarm: this step is ordinary behaviour.'));
-            return li;
-        }));
-    }
-
-    async function loadLab() {
-        let lab;
-        try {
-            lab = await api('/api/admin/lab');
-        } catch (error) {
-            return;
-        }
-        paintMode(lab.mode);
-        byId('labOff').hidden = lab.enabled;
-        byId('labOn').hidden = !lab.enabled;
-        byId('scenarioList').replaceChildren(...lab.scenarios.map(scenario => {
-            const li = el('li', 'console scenario');
-            li.appendChild(el('span', 'mono', scenario.attack ? 'Attack' : 'Control'));
-            li.appendChild(el('h3', null, scenario.title));
-            li.appendChild(el('p', null, scenario.description));
-            const button = el('button', 'small', 'Run scenario');
-            button.type = 'button';
-            button.addEventListener('click', async () => {
-                const all = [...document.querySelectorAll('.scenario button'), byId('labCleanup')];
-                all.forEach(b => { b.disabled = true; });
-                button.textContent = 'Running…';
-                setMessage(byId('labMessage'), '');
-                try {
-                    renderRun(await api('/api/admin/lab/run', { method: 'POST', body: JSON.stringify({ scenario: scenario.id }) }));
-                    byId('labResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
-                } catch (error) {
-                    setMessage(byId('labMessage'), error.message, 'error');
-                } finally {
-                    all.forEach(b => { b.disabled = false; });
-                    button.textContent = 'Run scenario';
-                }
-            });
-            li.appendChild(button);
-            return li;
-        }));
-    }
-
-    byId('labCleanup').addEventListener('click', async (event) => {
-        const button = event.currentTarget;
-        button.disabled = true;
-        try {
-            const result = await api('/api/admin/lab/cleanup', { method: 'POST' });
-            byId('labResult').hidden = true;
-            setMessage(byId('labMessage'), result.removed
-                ? `Removed ${result.removed} lab accounts with their transactions and alerts.`
-                : 'There was no lab data to remove.', 'success');
-        } catch (error) {
-            setMessage(byId('labMessage'), error.message, 'error');
-        } finally {
-            button.disabled = false;
-        }
-    });
-
-    (async () => {
-        const user = await requireUser('admin');
-        if (!user) return;
-        document.getElementById('userName').textContent = user.name;
-        await Promise.all([load(), loadLab()]);
-    })();
-}
+// The administrator pages are in admin.js (version 3).

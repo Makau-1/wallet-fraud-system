@@ -1,7 +1,8 @@
 # Runs the whole test suite on every push and pull request:
 # the model is trained from the committed data, the database is created
 # from schema.sql, both services are started, and all test cases run,
-# first in advisory mode and then in enforce mode.
+# first in advisory mode and then in enforce mode. After each run the
+# books are reconciled; any difference fails the build.
 
 name: Tests
 
@@ -24,7 +25,9 @@ jobs:
           MYSQL_DATABASE: wallet_fraud_db
           MYSQL_USER: wallet
           MYSQL_PASSWORD: ci-password
-          MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+          # The schema creates triggers (the append-only journal), which
+          # needs an administrator account, so CI loads it as root.
+          MYSQL_ROOT_PASSWORD: ci-root-password
         ports:
           - 3306:3306
         options: >-
@@ -39,6 +42,7 @@ jobs:
       DB_NAME: wallet_fraud_db
       SESSION_SECRET: ci-only-session-secret
       ML_URL: http://127.0.0.1:8000
+      ML_ADMIN_TOKEN: ci-ml-admin-token
       PORT: 3000
 
     steps:
@@ -61,7 +65,10 @@ jobs:
           pip install -r ml/requirements-service.txt
 
       - name: Create the database tables
-        run: mysql -h 127.0.0.1 -u wallet -pci-password wallet_fraud_db < database/schema.sql
+        run: |
+          mysql -h 127.0.0.1 -u root -pci-root-password wallet_fraud_db < database/schema.sql
+          node scripts/migrate.js
+          node scripts/migrate.js --status
 
       - name: Train the model
         working-directory: ml
@@ -78,21 +85,39 @@ jobs:
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8000/health > /dev/null && exit 0; sleep 1; done
           cat ../ml.log; exit 1
 
-      - name: Functional tests, advisory mode (TC-01 to TC-26)
+      - name: Functional tests, advisory mode (TC-01 to TC-26, and TC-41 to TC-65 that apply)
+        env:
+          USSD_SIMULATOR: "1"
         run: |
           nohup node src/server.js > web.log 2>&1 & echo $! > web.pid
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:3000/api > /dev/null && break; sleep 1; done
           node tests/run-tests.js
+          node tests/run-v3-tests.js
+          node scripts/reconcile.js
           kill "$(cat web.pid)"
 
-      - name: Risk engine tests, enforce mode (TC-27 to TC-38)
+      - name: Risk engine and platform tests, enforce mode (TC-27 to TC-40, TC-41 to TC-65)
         env:
           RISK_MODE: enforce
           ATTACK_LAB: "1"
+          USSD_SIMULATOR: "1"
         run: |
           nohup node src/server.js > web-enforce.log 2>&1 & echo $! > web.pid
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:3000/api > /dev/null && break; sleep 1; done
           node tests/run-v2-tests.js
+          node tests/run-v3-tests.js
+          node scripts/reconcile.js
+          kill "$(cat web.pid)"
+
+      - name: Load test (20 users, 20 seconds)
+        env:
+          RISK_MODE: enforce
+        run: |
+          nohup node src/server.js > web-load.log 2>&1 & echo $! > web.pid
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:3000/api > /dev/null && break; sleep 1; done
+          node scripts/load-test.js 20 20
+          node scripts/reconcile.js
+          node tests/run-tests.js --cleanup
           kill "$(cat web.pid)"
 
       - name: Keep the results and logs

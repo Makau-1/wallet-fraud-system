@@ -1,5 +1,5 @@
 {
-  "run": "2026-11-12 05:44:13",
+  "run": "2026-11-17 12:25:00",
   "base": "http://localhost:3000",
   "status": {
     "wallet": "operational",
@@ -7,7 +7,9 @@
     "scoring": "operational",
     "riskMode": "enforce",
     "attackLab": true,
-    "checked_at": "2026-11-12T05:44:01.069Z"
+    "mpesaMode": "simulator",
+    "ussdSimulator": true,
+    "checked_at": "2026-11-17T12:24:50.831Z"
   },
   "results": [
     {
@@ -87,7 +89,7 @@
       "requirement": "FR-23",
       "description": "Attack lab scenarios",
       "expected": "Every attack step expected to be caught is caught; ordinary behaviour raises no false alarm; a non-administrator is refused",
-      "actual": "Non-admin HTTP 403; normal: 0 false alarms in 3; takeover: 1 of 1 caught (model alone 1); velocity: 4 of 4 caught (model alone 0); mule_chain: 2 of 2 caught (model alone 0); fan_in: 2 of 2 caught (model alone 1); round_trip: 2 of 2 caught (model alone 1); cleanup removed 20 accounts, 0 left",
+      "actual": "Non-admin HTTP 403; normal: 0 false alarms in 3; takeover: 1 of 1 caught (model alone 1); velocity: 4 of 4 caught (model alone 0); mule_chain: 2 of 2 caught (model alone 0); fan_in: 2 of 2 caught (model alone 1); round_trip: 2 of 2 caught (model alone 1); cleanup removed 42 accounts, 0 left",
       "status": "Pass"
     },
     {

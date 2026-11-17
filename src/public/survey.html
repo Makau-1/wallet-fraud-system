@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureWallet | Usability survey</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="survey">
+    <header class="topbar">
+        <a class="brand" href="dashboard.html">
+            <img class="brand-logo" src="img/webmasters-logo.png" alt="Webmasters">
+            <span class="brand-divider" aria-hidden="true"></span>
+            <span class="brand-product">SecureWallet</span>
+        </a>
+        <div class="who"><a href="dashboard.html" class="button quiet">Back</a></div>
+    </header>
+    <main class="page narrow">
+        <div class="page-head">
+            <span class="mono">Usability study</span>
+            <h1 style="margin-top:10px">How easy is SecureWallet to use?</h1>
+            <p>Ten short statements. For each, choose how much you agree, thinking about the tasks you just did. There are no right answers, and it takes about two minutes.</p>
+        </div>
+        <form id="susForm" class="console" novalidate>
+            <div id="susItems"></div>
+            <label for="susComment">Anything else? (optional)</label>
+            <textarea id="susComment" maxlength="1000"></textarea>
+            <button type="submit" class="full" id="susSubmit">Send answers</button>
+            <p id="susMessage" class="message" role="status" aria-live="polite"></p>
+        </form>
+        <p class="hint">The questionnaire is the System Usability Scale (Brooke, 1996). Answers are stored with your account and summarised for the project team.</p>
+    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite"><span class="toast-icon" aria-hidden="true">&#10003;</span><div><strong id="toastTitle"></strong><span class="mono" id="toastDetail"></span></div></div>
+    <script src="app.js"></script>
+    <script src="pages-v3.js"></script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SecureWallet | Fraud review</title>
+    <title>SecureWallet | Operations</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -17,63 +17,280 @@
             <span class="brand-product">SecureWallet</span>
         </a>
         <div class="who">
+            <span class="mono live" id="liveState"><span class="dot idle"></span>Connecting</span>
             <span id="userName"></span>
             <button id="logoutButton" class="quiet" type="button">Log out</button>
         </div>
     </header>
 
-    <main class="page">
-        <div class="mode-switch" role="tablist" aria-label="Admin sections">
-            <button type="button" role="tab" aria-selected="true" data-section="alerts">Fraud review</button>
-            <button type="button" role="tab" aria-selected="false" data-section="lab">Attack lab</button>
-        </div>
+    <div class="ops">
+        <nav class="ops-nav" aria-label="Operations sections">
+            <span class="mono ops-group">Monitor</span>
+            <a href="#overview" data-section="overview"><span class="action-icon" data-icon="gauge"></span>Overview</a>
+            <a href="#alerts" data-section="alerts"><span class="action-icon" data-icon="shield"></span>Fraud review <span class="count" id="navAlerts" hidden>0</span></a>
+            <a href="#cases" data-section="cases"><span class="action-icon" data-icon="list"></span>Disputes and reports <span class="count" id="navCases" hidden>0</span></a>
+            <a href="#network" data-section="network"><span class="action-icon" data-icon="network"></span>Network</a>
+            <span class="mono ops-group">Model</span>
+            <a href="#models" data-section="models"><span class="action-icon" data-icon="model"></span>Models and drift</a>
+            <a href="#lab" data-section="lab"><span class="action-icon" data-icon="lab"></span>Attack lab</a>
+            <span class="mono ops-group">Platform</span>
+            <a href="#ledger" data-section="ledger"><span class="action-icon" data-icon="ledger"></span>Ledger</a>
+            <a href="#audit" data-section="audit"><span class="action-icon" data-icon="statement"></span>Audit log</a>
+            <a href="#system" data-section="system"><span class="action-icon" data-icon="gauge"></span>System</a>
+            <a href="#api" data-section="api"><span class="action-icon" data-icon="key"></span>Fraud API clients</a>
+            <a href="#survey" data-section="survey"><span class="action-icon" data-icon="star"></span>Usability survey</a>
+        </nav>
 
-        <div data-section-panel="alerts">
-        <div class="page-head">
-            <span class="mono">Fraud operations <span id="modeBadge" class="badge"></span></span>
-            <h1 style="margin-top:10px">Fraud review</h1>
-            <p id="reviewIntro">Payments whose risk score reached the alert threshold.</p>
-        </div>
+        <main class="ops-main">
+            <p id="adminMessage" class="message" role="status" aria-live="polite"></p>
 
-        <div class="stats">
-            <div class="console stat"><span class="mono"><span class="dot ok"></span>Waiting</span><div class="num" id="stat-pending">0</div></div>
-            <div class="console stat"><span class="mono"><span class="dot bad"></span>Confirmed fraud</span><div class="num" id="stat-confirmed_fraud">0</div></div>
-            <div class="console stat"><span class="mono"><span class="dot safe"></span>Dismissed</span><div class="num" id="stat-cleared">0</div></div>
-            <div class="console stat"><span class="mono">Scoring model</span><div class="num small" id="scoringStatus"><span class="dot idle"></span>Checking</div></div>
-        </div>
+            <!-- ======================= 2FA REQUIRED ======================= -->
+            <section id="mfaGate" class="console" hidden>
+                <div class="console-head"><span class="mono">Two-factor sign-in required</span></div>
+                <h2>Turn on two-factor sign-in to continue</h2>
+                <p class="hint">Administrator tools need a code from an authenticator app as well as your password. Scan the code with Google Authenticator, Microsoft Authenticator or Authy, then enter the 6-digit code it shows.</p>
+                <img id="gateQr" class="qr" alt="QR code to scan with your authenticator app">
+                <p class="hint">Or enter this key by hand: <code id="gateSecret"></code></p>
+                <label for="gatePassword">Account password</label>
+                <input id="gatePassword" type="password" autocomplete="current-password" style="max-width:320px">
+                <label for="gateCode">Code</label>
+                <input id="gateCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" style="max-width:220px">
+                <button type="button" id="gateEnable" style="margin-top:14px">Turn on and continue</button>
+                <p id="gateMessage" class="message" role="status"></p>
+            </section>
 
-        <div class="tabs" role="tablist" aria-label="Alert status">
-            <button type="button" role="tab" aria-selected="true" data-status="pending">Waiting for review <span class="count" id="count-pending">0</span></button>
-            <button type="button" role="tab" aria-selected="false" data-status="confirmed_fraud">Confirmed fraud <span class="count" id="count-confirmed_fraud">0</span></button>
-            <button type="button" role="tab" aria-selected="false" data-status="cleared">Dismissed <span class="count" id="count-cleared">0</span></button>
-        </div>
-
-        <p id="adminMessage" class="message" role="status" aria-live="polite"></p>
-        <ul id="alertList" class="alerts" aria-live="polite"></ul>
-        </div>
-
-        <div data-section-panel="lab" hidden>
-            <div class="page-head">
-                <span class="mono">Red team <span id="labModeBadge" class="badge"></span></span>
-                <h1 style="margin-top:10px">Attack lab</h1>
-                <p>Runs scripted fraud scenarios through the real payment path and shows what the risk engine did with every step. Each run creates its own test accounts, so no real user is touched.</p>
-            </div>
-            <p id="labOff" class="notice" hidden>The attack lab is switched off. Add <code>ATTACK_LAB=1</code> to the <code>.env</code> file and restart the server to use it. Leave it off on any public deployment.</p>
-            <div id="labOn" hidden>
-                <ul id="scenarioList" class="scenarios"></ul>
-                <p id="labMessage" class="message" role="status" aria-live="polite"></p>
-                <section id="labResult" class="console" hidden>
-                    <div class="console-head"><span class="mono" id="labResultTitle"></span><span class="mono" id="labResultMode"></span></div>
-                    <div class="lab-summary" id="labSummary"></div>
-                    <ol id="labTrace" class="trace"></ol>
-                </section>
-                <div class="lab-foot">
-                    <span class="hint">Lab runs add alerts to the review queue. Removing lab data deletes the test accounts with their transactions and alerts.</span>
-                    <button type="button" class="quiet small" id="labCleanup">Remove lab data</button>
+            <!-- ======================= OVERVIEW ======================= -->
+            <section data-panel="overview" hidden>
+                <div class="page-head">
+                    <span class="mono">Fraud operations <span class="badge" data-mode-badge></span></span>
+                    <h1 style="margin-top:10px">Overview</h1>
+                    <p>Today's payments, the review queue, money stopped, and the health of the model, the books and the background workers.</p>
                 </div>
-            </div>
-        </div>
-    </main>
+                <div class="stats stats-wide" id="kpis"></div>
+                <div class="dashboard">
+                    <section class="console" aria-labelledby="alertsChartHead">
+                        <div class="console-head"><span class="mono" id="alertsChartHead">Alerts raised per day, last 14 days</span></div>
+                        <div id="alertsChart" class="bar-chart"></div>
+                    </section>
+                    <section class="console" aria-labelledby="healthHead">
+                        <div class="console-head"><span class="mono" id="healthHead">Health</span></div>
+                        <ul class="console-rows" id="healthRows"></ul>
+                    </section>
+                </div>
+            </section>
+
+            <!-- ======================= ALERTS ======================= -->
+            <section data-panel="alerts" hidden>
+                <div class="page-head">
+                    <span class="mono">Fraud operations <span class="badge" data-mode-badge></span></span>
+                    <h1 style="margin-top:10px">Fraud review</h1>
+                    <p id="reviewIntro">Payments whose risk score reached the alert threshold.</p>
+                </div>
+                <div class="stats">
+                    <div class="console stat"><span class="mono"><span class="dot ok"></span>Waiting</span><div class="num" id="stat-pending">0</div></div>
+                    <div class="console stat"><span class="mono"><span class="dot bad"></span>Confirmed fraud</span><div class="num" id="stat-confirmed_fraud">0</div></div>
+                    <div class="console stat"><span class="mono"><span class="dot safe"></span>Dismissed</span><div class="num" id="stat-cleared">0</div></div>
+                    <div class="console stat"><span class="mono">Scoring model</span><div class="num small" id="scoringStatus"><span class="dot idle"></span>Checking</div></div>
+                </div>
+                <div class="tabs" role="tablist" aria-label="Alert status">
+                    <button type="button" role="tab" aria-selected="true" data-status="pending">Waiting for review <span class="count" id="count-pending">0</span></button>
+                    <button type="button" role="tab" aria-selected="false" data-status="confirmed_fraud">Confirmed fraud <span class="count" id="count-confirmed_fraud">0</span></button>
+                    <button type="button" role="tab" aria-selected="false" data-status="cleared">Dismissed <span class="count" id="count-cleared">0</span></button>
+                </div>
+                <ul id="alertList" class="alerts" aria-live="polite"></ul>
+            </section>
+
+            <!-- ======================= DISPUTES AND REPORTS ======================= -->
+            <section data-panel="cases" hidden>
+                <div class="page-head">
+                    <span class="mono">Customer protection</span>
+                    <h1 style="margin-top:10px">Disputes and reports</h1>
+                    <p>"This wasn't me" claims from customers, and accounts other customers have reported. Upholding a dispute recovers whatever the recipient still holds and freezes the recipient. Decisions that move <span id="twoPersonLabel">KES 10,000</span> or more need a second administrator.</p>
+                </div>
+                <div class="tabs" role="tablist" aria-label="Case type">
+                    <button type="button" role="tab" aria-selected="true" data-case="open">Open disputes</button>
+                    <button type="button" role="tab" aria-selected="false" data-case="decided">Decided</button>
+                    <button type="button" role="tab" aria-selected="false" data-case="reports">Reported accounts</button>
+                </div>
+                <div id="caseList" aria-live="polite"></div>
+            </section>
+
+            <!-- ======================= NETWORK ======================= -->
+            <section data-panel="network" hidden>
+                <div class="page-head">
+                    <span class="mono">Money-flow analysis</span>
+                    <h1 style="margin-top:10px">Network</h1>
+                    <p>Who paid whom around an account. Money mules show up as shapes: chains passing money on within minutes, new accounts collecting from many payers, and money going round in circles.</p>
+                </div>
+                <form class="console network-search" id="networkForm" novalidate>
+                    <div>
+                        <label for="networkAccount">Account (email, phone or wallet number)</label>
+                        <input id="networkAccount" placeholder="name@example.com">
+                    </div>
+                    <div>
+                        <label for="networkHours">Period</label>
+                        <select id="networkHours"><option value="24">Last 24 hours</option><option value="168" selected>Last 7 days</option><option value="720">Last 30 days</option></select>
+                    </div>
+                    <div>
+                        <label for="networkHops">Reach</label>
+                        <select id="networkHops"><option value="1">1 step</option><option value="2" selected>2 steps</option><option value="3">3 steps</option></select>
+                    </div>
+                    <button type="submit">Show network</button>
+                </form>
+                <section class="console graph-box" id="graphBox" hidden>
+                    <div class="console-head"><span class="mono" id="graphTitle"></span><span class="mono graph-legend"><span class="dot safe"></span>Centre <span class="dot bad"></span>Reported or confirmed <span class="dot ok"></span>Open alert <span class="dot idle"></span>Other</span></div>
+                    <svg id="graph" role="img" aria-labelledby="graphTitle"></svg>
+                    <div class="table-wrap"><table class="data-table" id="graphTable"></table></div>
+                </section>
+                <section class="console" aria-labelledby="findingsHead">
+                    <div class="console-head"><span class="mono" id="findingsHead">Accounts that look like mules, last 7 days</span></div>
+                    <div class="table-wrap"><table class="data-table" id="findings"></table></div>
+                </section>
+            </section>
+
+            <!-- ======================= MODELS ======================= -->
+            <section data-panel="models" hidden>
+                <div class="page-head">
+                    <span class="mono">Feedback loop</span>
+                    <h1 style="margin-top:10px">Models and drift</h1>
+                    <p>Analyst decisions and API clients' labels become training examples. Retraining builds a challenger, which scores every payment in shadow beside the champion until you promote it or discard it. Drift compares live payments with the training data.</p>
+                </div>
+                <div class="dashboard">
+                    <section class="console" id="championCard"></section>
+                    <section class="console" id="challengerCard"></section>
+                </div>
+                <section class="console" aria-labelledby="driftHead" style="margin-top:20px">
+                    <div class="console-head"><span class="mono" id="driftHead">Drift: population stability index by feature</span><span class="mono" id="driftN"></span></div>
+                    <div id="drift"></div>
+                    <p class="hint">Below 0.10 stable, 0.10 to 0.25 a moderate shift, above 0.25 a major shift. Large values are expected here: the model was trained on PaySim, whose balances and amounts differ from this wallet's, and balance discrepancy is always zero in a consistent ledger.</p>
+                </section>
+            </section>
+
+            <!-- ======================= ATTACK LAB ======================= -->
+            <section data-panel="lab" hidden>
+                <div class="page-head">
+                    <span class="mono">Red team <span class="badge" data-mode-badge></span></span>
+                    <h1 style="margin-top:10px">Attack lab</h1>
+                    <p>Runs scripted fraud scenarios through the real payment path and shows what the risk engine did with every step. Each run creates its own test accounts, so no real user is touched.</p>
+                </div>
+                <p id="labOff" class="notice" hidden>The attack lab is switched off. Add <code>ATTACK_LAB=1</code> to the <code>.env</code> file and restart the server to use it. Leave it off on any public deployment.</p>
+                <div id="labOn" hidden>
+                    <section class="console" style="margin-bottom:18px">
+                        <div class="console-head"><span class="mono">Evaluation</span><span class="mono" id="evalWhen"></span></div>
+                        <p class="hint" style="margin-top:0">Runs every scenario and compares the engine with the model on its own. The figures describe these scenarios, which the signal weights were tuned on; they are not an estimate of real-world detection.</p>
+                        <div class="lab-foot" style="margin-top:0">
+                            <button type="button" id="runAll">Run every scenario</button>
+                            <button type="button" class="quiet small" id="exportEval" disabled>Download results (CSV)</button>
+                        </div>
+                        <div class="table-wrap"><table class="data-table" id="evalTable" hidden></table></div>
+                    </section>
+                    <ul id="scenarioList" class="scenarios"></ul>
+                    <p id="labMessage" class="message" role="status" aria-live="polite"></p>
+                    <section id="labResult" class="console" hidden>
+                        <div class="console-head"><span class="mono" id="labResultTitle"></span><span class="mono" id="labResultMode"></span></div>
+                        <div class="lab-summary" id="labSummary"></div>
+                        <ol id="labTrace" class="trace"></ol>
+                    </section>
+                    <div class="lab-foot">
+                        <span class="hint">Lab runs add alerts to the review queue. Removing lab data deletes the test accounts with their transactions and alerts.</span>
+                        <button type="button" class="quiet small" id="labCleanup">Remove lab data</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ======================= LEDGER ======================= -->
+            <section data-panel="ledger" hidden>
+                <div class="page-head">
+                    <span class="mono">Double-entry journal</span>
+                    <h1 style="margin-top:10px">Ledger</h1>
+                    <p>Every movement of money is a journal entry whose lines add up to zero. Reconciliation proves the wallets, savings goals, loans, chamas and held payments match the journal, and that the journal and audit log have not been altered. It runs every night and on demand.</p>
+                </div>
+                <div class="dashboard">
+                    <section class="console" id="reconCard"></section>
+                    <section class="console" id="positionsCard"></section>
+                </div>
+                <section class="console" style="margin-top:20px">
+                    <div class="console-head"><span class="mono">Latest journal entries</span><span class="mono" id="headHash"></span></div>
+                    <div class="table-wrap"><table class="data-table" id="journalTable"></table></div>
+                </section>
+            </section>
+
+            <!-- ======================= AUDIT ======================= -->
+            <section data-panel="audit" hidden>
+                <div class="page-head">
+                    <span class="mono">Accountability</span>
+                    <h1 style="margin-top:10px">Audit log</h1>
+                    <p>Who did what: sign-ins, PIN and two-factor changes, freezes, alert decisions and approvals, model changes, API keys and reconciliation runs. Each record is linked to the one before it by a hash, and the database refuses to change or delete records.</p>
+                </div>
+                <div class="lab-foot" style="margin:0 0 16px">
+                    <div class="inline-form" style="max-width:420px">
+                        <label for="auditFilter" class="visually-hidden">Filter by action</label>
+                        <select id="auditFilter">
+                            <option value="">All actions</option>
+                            <option value="auth">Sign-ins</option>
+                            <option value="alert">Alert decisions</option>
+                            <option value="dispute">Disputes</option>
+                            <option value="account">Freezes</option>
+                            <option value="model">Models</option>
+                            <option value="api">API clients</option>
+                            <option value="ledger">Ledger</option>
+                            <option value="pin">PINs</option>
+                            <option value="2fa">Two-factor</option>
+                        </select>
+                    </div>
+                    <button type="button" id="verifyChain">Verify the chains</button>
+                </div>
+                <p id="verifyResult" class="message" role="status"></p>
+                <section class="console"><div class="table-wrap"><table class="data-table" id="auditTable"></table></div>
+                    <button type="button" class="quiet small" id="auditMore" style="margin-top:12px" hidden>Show older</button></section>
+            </section>
+
+            <!-- ======================= SYSTEM ======================= -->
+            <section data-panel="system" hidden>
+                <div class="page-head">
+                    <span class="mono">Monitoring</span>
+                    <h1 style="margin-top:10px">System</h1>
+                    <p>Response times over the last 15 minutes, background queues and services. The same figures are published for monitoring tools at <code>/metrics</code> in the Prometheus format.</p>
+                </div>
+                <div class="stats stats-wide" id="systemTiles"></div>
+                <section class="console"><div class="console-head"><span class="mono">Response times, last 15 minutes (milliseconds)</span><button type="button" class="quiet small" id="systemRefresh">Refresh</button></div>
+                    <div class="table-wrap"><table class="data-table" id="latencyTable"></table></div></section>
+            </section>
+
+            <!-- ======================= API CLIENTS ======================= -->
+            <section data-panel="api" hidden>
+                <div class="page-head">
+                    <span class="mono">Fraud API</span>
+                    <h1 style="margin-top:10px">API clients</h1>
+                    <p>Businesses that send their payments to the fraud API. Each has its own keys, rate limit and webhook. A key and a webhook secret are shown once, when created. See the <a href="developers.html">developer documentation</a>.</p>
+                </div>
+                <form class="console inline-form" id="clientForm" novalidate style="margin-bottom:18px">
+                    <label for="clientName" class="visually-hidden">Client name</label>
+                    <input id="clientName" maxlength="80" placeholder="Client name, for example Duka Pay">
+                    <label for="clientEmail" class="visually-hidden">Contact email</label>
+                    <input id="clientEmail" type="email" placeholder="Contact email (optional)">
+                    <button type="submit">Add client</button>
+                </form>
+                <div id="secretBox" class="notice" hidden></div>
+                <div id="clientList" class="stack"></div>
+            </section>
+
+            <!-- ======================= SURVEY ======================= -->
+            <section data-panel="survey" hidden>
+                <div class="page-head">
+                    <span class="mono">Evidence</span>
+                    <h1 style="margin-top:10px">Usability survey</h1>
+                    <p>System Usability Scale results from people testing SecureWallet (<a href="survey.html">the questionnaire</a>). Scores run from 0 to 100; about 68 is commonly treated as average. The study plan is in <code>docs/USABILITY_STUDY.md</code>.</p>
+                </div>
+                <div class="stats stats-wide" id="surveyTiles"></div>
+                <section class="console"><div class="console-head"><span class="mono">Average answer per statement (1 to 5)</span></div><div class="table-wrap"><table class="data-table" id="surveyTable"></table></div></section>
+                <section class="console" style="margin-top:20px"><div class="console-head"><span class="mono">Comments</span></div><ul class="simple-list" id="surveyComments"></ul></section>
+            </section>
+        </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"><span class="toast-icon" aria-hidden="true">&#10003;</span><div><strong id="toastTitle"></strong><span class="mono" id="toastDetail"></span></div></div>
     <script src="app.js"></script>
+    <script src="admin.js"></script>
 </body>
 </html>
